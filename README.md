@@ -15,9 +15,9 @@ Programs expects entry signals to be pushed to Redis queue for entry of trades.
 ## Instructions
 
 Requires following :
-	* IB TWS to be running and accessible from the machine where this Java program is running.
-	* Redis server to be running and accessible from the machine where this Java programs is running.
-	* Predefined key structure to store configuration is available on Redis server. 'redis-configuration.txt' contains required keys.
+  * IB TWS to be running and accessible from the machine where this Java program is running.
+  * Redis server to be running and accessible from the machine where this Java programs is running.
+  * Predefined key structure to store configuration is available on Redis server. 'redis-configuration.txt' contains required keys.
 
 ### Running the programs
 
@@ -56,5 +56,5 @@ I enjoy getting feedback. Please do send feedback to contacts below.
 
 ## Contact
 
-Post bugs and issues on [github]. Send other comments to Manish Singh:
-mksingh at hotmail dotcom or [@singh-manish]
+Post bugs and issues on [github]. 
+Send other comments to Manish Singh: mksingh at hotmail dotcom
