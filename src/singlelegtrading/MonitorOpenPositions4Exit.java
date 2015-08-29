@@ -26,8 +26,7 @@ SOFTWARE.
 
 package singlelegtrading;
 
-import java.util.Calendar;
-import java.util.TimeZone;
+import java.util.*;
 import redis.clients.jedis.*;
 
 /**
@@ -51,7 +50,7 @@ public class MonitorOpenPositions4Exit extends Thread {
 
    public singlelegtrading.SingleLegTrading.MyManualInterventionClass[] myMIDetails;      
       
-   MonitorOpenPositions4Exit(String name, JedisPool redisConnectionPool, IBInteraction ibIntClient, String redisConfigKey, TimeZone exTZ, singlelegtrading.SingleLegTrading.MyManualInterventionClass[] miDetails, boolean debugIndicator){
+   MonitorOpenPositions4Exit(String name, JedisPool redisConnectionPool, IBInteraction ibIntClient, String redisConfigKey, MyExchangeClass exchangeObj, singlelegtrading.SingleLegTrading.MyManualInterventionClass[] miDetails, boolean debugIndicator){
 
         threadName = name;
         debugFlag = debugIndicator;
@@ -59,7 +58,7 @@ public class MonitorOpenPositions4Exit extends Thread {
         jedisPool = redisConnectionPool;               
         ibInteractionClient = ibIntClient;                
         redisConfigurationKey = redisConfigKey; 
-        exchangeTimeZone = exTZ;
+        exchangeTimeZone = exchangeObj.getExchangeTimeZone();
         myUtils = new MyUtils();
         myMIDetails = miDetails;
         TimeZone.setDefault(exchangeTimeZone);
@@ -103,34 +102,42 @@ public class MonitorOpenPositions4Exit extends Thread {
         }        
         
         while (myUtils.marketIsOpen(eodExitTime, exchangeTimeZone, false)) {
+
+            int lastExitOrderTime = 1529;
+            String lastExitOrderTimeConfigValue = myUtils.getHashMapValueFromRedis(jedisPool, redisConfigurationKey, "LASTEXITORDERTIME", false);
+            if (( lastExitOrderTimeConfigValue != null) && (lastExitOrderTimeConfigValue.length() > 0)) {
+                lastExitOrderTime = Integer.parseInt(lastExitOrderTimeConfigValue);
+            }
             
-            for (int slotNumber = 1; slotNumber <= MAXPOSITIONSTOTRACK; slotNumber++) {
-                if (myUtils.checkIfExistsHashMapField(jedisPool, openPositionsQueueKeyName, Integer.toString(slotNumber), false)) {
-                    
-                    TradingObject myTradeObject = new TradingObject(myUtils.getHashMapValueFromRedis(jedisPool, openPositionsQueueKeyName, Integer.toString(slotNumber),debugFlag));
+            if (myUtils.marketIsOpen(lastExitOrderTime, exchangeTimeZone, false)) {                
+                for (int slotNumber = 1; slotNumber <= MAXPOSITIONSTOTRACK; slotNumber++) {
+                    if (myUtils.checkIfExistsHashMapField(jedisPool, openPositionsQueueKeyName, Integer.toString(slotNumber), false)) {
 
-                    if (myTradeObject.getOrderState().equalsIgnoreCase("entryorderfilled")) {
-                        // Check if corresponding thread is running. if not running then start a thread to monitor the position
-                        String exitMonitoringThreadName = "monitoringExit4Position_" + Integer.toString(slotNumber);
-                        // if this is first time then thread object would be null. if it is null then create the instance
-                        if (exitThreads[slotNumber] == null) {
-                            exitObjects[slotNumber] = new SingleLegExit(exitMonitoringThreadName, jedisPool, ibInteractionClient, redisConfigurationKey, exchangeTimeZone, slotNumber, myMIDetails, debugFlag);                        
-                            exitThreads[slotNumber] = new Thread(exitObjects[slotNumber]);
-                            exitThreads[slotNumber].setName(exitMonitoringThreadName);                            
-                            exitThreads[slotNumber].start();                        
-                        } else if (exitThreads[slotNumber].getState() == Thread.State.TERMINATED)  {                        
-                            System.out.println(String.format("%1$tY%1$tm%1$td:%1$tH:%1$tM:%1$tS ",Calendar.getInstance(exchangeTimeZone)) + "Info : Restarting Monitoring Thread for Leg " +  myTradeObject.getTradingObjectName() + " having state as " + exitThreads[slotNumber].getState() + " having Name as " + exitThreads[slotNumber].getName() + " having alive status as " + exitThreads[slotNumber].isAlive());
-                            exitObjects[slotNumber] = new SingleLegExit(exitMonitoringThreadName, jedisPool, ibInteractionClient, redisConfigurationKey, exchangeTimeZone, slotNumber, myMIDetails, debugFlag);                        
-                            exitThreads[slotNumber] = new Thread(exitObjects[slotNumber]);
-                            exitThreads[slotNumber].setName(exitMonitoringThreadName);                            
-                            exitThreads[slotNumber].start();                                                                       
+                        TradingObject myTradeObject = new TradingObject(myUtils.getHashMapValueFromRedis(jedisPool, openPositionsQueueKeyName, Integer.toString(slotNumber),debugFlag));
+
+                        if (myTradeObject.getOrderState().equalsIgnoreCase("entryorderfilled")) {
+                            // Check if corresponding thread is running. if not running then start a thread to monitor the position
+                            String exitMonitoringThreadName = "monitoringExit4Position_" + Integer.toString(slotNumber);
+                            // if this is first time then thread object would be null. if it is null then create the instance
+                            if (exitThreads[slotNumber] == null) {
+                                exitObjects[slotNumber] = new SingleLegExit(exitMonitoringThreadName, jedisPool, ibInteractionClient, redisConfigurationKey, exchangeTimeZone, slotNumber, myMIDetails, debugFlag);                        
+                                exitThreads[slotNumber] = new Thread(exitObjects[slotNumber]);
+                                exitThreads[slotNumber].setName(exitMonitoringThreadName);                            
+                                exitThreads[slotNumber].start();                        
+                            } else if (exitThreads[slotNumber].getState() == Thread.State.TERMINATED)  {                        
+                                System.out.println(String.format("%1$tY%1$tm%1$td:%1$tH:%1$tM:%1$tS ",Calendar.getInstance(exchangeTimeZone)) + "Info : Restarting Monitoring Thread for Leg " +  myTradeObject.getTradingObjectName() + " having state as " + exitThreads[slotNumber].getState() + " having Name as " + exitThreads[slotNumber].getName() + " having alive status as " + exitThreads[slotNumber].isAlive());
+                                exitObjects[slotNumber] = new SingleLegExit(exitMonitoringThreadName, jedisPool, ibInteractionClient, redisConfigurationKey, exchangeTimeZone, slotNumber, myMIDetails, debugFlag);                        
+                                exitThreads[slotNumber] = new Thread(exitObjects[slotNumber]);
+                                exitThreads[slotNumber].setName(exitMonitoringThreadName);                            
+                                exitThreads[slotNumber].start();                                                                       
+                            }
+                        } else {
+                            System.out.println(String.format("%1$tY%1$tm%1$td:%1$tH:%1$tM:%1$tS ",Calendar.getInstance(exchangeTimeZone)) + "Info : Not Able to Start Monitoring for Leg " +  myTradeObject.getTradingObjectName() + " as Entry Order is not updated as completely filled in open positions queue" );
                         }
-                    } else {
-                        System.out.println(String.format("%1$tY%1$tm%1$td:%1$tH:%1$tM:%1$tS ",Calendar.getInstance(exchangeTimeZone)) + "Info : Not Able to Start Monitoring for Leg " +  myTradeObject.getTradingObjectName() + " as Entry Order is not updated as completely filled in open positions queue" );
-                    }
-                } // end of checking of each slot                
-            } // end of For loop of checking against each position
+                    } // end of checking of each slot                
+                } // end of For loop of checking against each position
 
+            }
             // Wait for two minutes before checking again
             myUtils.waitForNSeconds(120);            
         }    

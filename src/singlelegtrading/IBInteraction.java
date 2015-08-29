@@ -80,30 +80,25 @@ public class IBInteraction implements EWrapper {
     
     private int initialValidOrderID = -1;
     
-    private TimeZone exchangeTimeZone;
-    private String exchangeName = "NSE";
-    private String exchangeCurrency = "INR";
+    private MyExchangeClass myExchangeObj;
     private double defaultOffsetForRelativeOrder = 0.05;
     
     private int IBTICKARRAYINDEXOFFSET = 50;
     
     // Constructor to inititalize variables
-    IBInteraction(JedisPool jedisConnectionPool, String orderIDIncrField, String ibAPIIPAddress, int ibAPIPortNumber, int ibAPIClientId, TimeZone exTZ) {
+    IBInteraction(JedisPool jedisConnectionPool, String orderIDIncrField, String ibAPIIPAddress, int ibAPIPortNumber, int ibAPIClientId, MyExchangeClass exchangeObj) {
         jedisPool = jedisConnectionPool;
         myIPAddress = ibAPIIPAddress;
         myPortNum = ibAPIPortNumber;
         myClientId = ibAPIClientId;
         orderIDField = orderIDIncrField;
-        exchangeTimeZone = exTZ;
-        TimeZone.setDefault(exchangeTimeZone);
+        myExchangeObj = exchangeObj;      
+
+        TimeZone.setDefault(myExchangeObj.getExchangeTimeZone());
  
-        if (exchangeTimeZone.equals(TimeZone.getTimeZone("Asia/Calcutta"))) {
-            exchangeName = "NSE";
-            exchangeCurrency = "INR";
+        if (myExchangeObj.getExchangeTimeZone().equals(TimeZone.getTimeZone("Asia/Calcutta"))) {
             defaultOffsetForRelativeOrder = 0.05;
-        } else if (exchangeTimeZone.equals(TimeZone.getTimeZone("America/New_York"))) {
-            exchangeName = "SMART";
-            exchangeCurrency = "USD";
+        } else if (myExchangeObj.getExchangeTimeZone().equals(TimeZone.getTimeZone("America/New_York"))) {
             defaultOffsetForRelativeOrder = 0.01;            
         }
         
@@ -198,8 +193,8 @@ public class IBInteraction implements EWrapper {
         Contract myContract = new Contract();   
         myContract.m_symbol = symbol;
         myContract.m_secType = "STK";
-        myContract.m_exchange = exchangeName;
-        myContract.m_currency = exchangeCurrency;   
+        myContract.m_exchange = myExchangeObj.getExchangeName();
+        myContract.m_currency = myExchangeObj.getExchangeCurrency();   
 
         myBidAskPriceDetails[requestID - IBTICKARRAYINDEXOFFSET].symbolBidPrice = 0.0;
         myBidAskPriceDetails[requestID - IBTICKARRAYINDEXOFFSET].symbolAskPrice = 0.0;            
@@ -219,8 +214,8 @@ public class IBInteraction implements EWrapper {
         Contract myContract = new Contract();   
         myContract.m_symbol = symbol;
         myContract.m_secType = "STK";
-        myContract.m_exchange = exchangeName;
-        myContract.m_currency = exchangeCurrency;        
+        myContract.m_exchange = myExchangeObj.getExchangeName();
+        myContract.m_currency = myExchangeObj.getExchangeCurrency();   
 
         myTickDetails[requestID].symbolLastPrice = 0.0;
         myTickDetails[requestID].symbolClosePrice = 0.0; 
@@ -240,8 +235,8 @@ public class IBInteraction implements EWrapper {
         Contract myContract = new Contract();   
         myContract.m_symbol = symbol;
         myContract.m_secType = "FUT";
-        myContract.m_exchange = exchangeName;
-        myContract.m_currency = exchangeCurrency;   
+        myContract.m_exchange = myExchangeObj.getExchangeName();
+        myContract.m_currency = myExchangeObj.getExchangeCurrency();   
         myContract.m_expiry = expiry;         
 
         myBidAskPriceDetails[requestID - IBTICKARRAYINDEXOFFSET].symbolBidPrice = 0.0;
@@ -262,8 +257,8 @@ public class IBInteraction implements EWrapper {
         Contract myContract = new Contract();   
         myContract.m_symbol = symbol;
         myContract.m_secType = "FUT";
-        myContract.m_exchange = exchangeName;
-        myContract.m_currency = exchangeCurrency;   
+        myContract.m_exchange = myExchangeObj.getExchangeName();
+        myContract.m_currency = myExchangeObj.getExchangeCurrency();   
         myContract.m_expiry = expiry;         
 
         myTickDetails[requestID].symbolLastPrice = 0.0;
@@ -288,18 +283,18 @@ public class IBInteraction implements EWrapper {
 
     void requestExecutionDetailsHistorical(int requestId, int numPrevDays) {
         
-        Calendar startingTimeStamp = Calendar.getInstance(exchangeTimeZone);
+        Calendar startingTimeStamp = Calendar.getInstance(myExchangeObj.getExchangeTimeZone());
         startingTimeStamp.add(Calendar.DATE, -1*numPrevDays); 
 
         String startTime = String.format("%1$tY%1$tm%1$td-00:00:00",startingTimeStamp); // format is - yyyymmdd-hh:mm:ss
 
         ExecutionFilter myFilter = new ExecutionFilter();
         myFilter.m_clientId = myClientId;
-        myFilter.m_exchange = exchangeName; 
+        myFilter.m_exchange = myExchangeObj.getExchangeName(); 
         myFilter.m_time = startTime;
 
         if (requestId > 0) {
-            System.out.println(String.format("%1$tY%1$tm%1$td:%1$tH:%1$tM:%1$tS ",Calendar.getInstance(exchangeTimeZone)) + "requesting execution details for time after " + startTime);
+            System.out.println(String.format("%1$tY%1$tm%1$td:%1$tH:%1$tM:%1$tS ",Calendar.getInstance(myExchangeObj.getExchangeTimeZone())) + "requesting execution details for time after " + startTime);
         }            
         
         ibClient.reqExecutions(requestId, myFilter);
@@ -314,8 +309,8 @@ public class IBInteraction implements EWrapper {
         
         myContract.m_symbol = symbol;
         myContract.m_secType = "STK";
-        myContract.m_exchange = exchangeName;
-        myContract.m_currency = exchangeCurrency;
+        myContract.m_exchange = myExchangeObj.getExchangeName();
+        myContract.m_currency = myExchangeObj.getExchangeCurrency();   
         
         myOrder.m_action = mktAction;
         myOrder.m_totalQuantity = qty;
@@ -333,7 +328,7 @@ public class IBInteraction implements EWrapper {
             getNextOrderStatusArrayIndex(ibOrderId);
             ibClient.placeOrder(ibOrderId, myContract, myOrder);
             if (debugFlag) {
-                System.out.println(String.format("%1$tY%1$tm%1$td:%1$tH:%1$tM:%1$tS ",Calendar.getInstance(exchangeTimeZone)) + "Placed Relative Order for " + symbol +" for "+ mktAction + " type STK " + " order ID " + ibOrderId + " limit " + limitPrice + " offsetAmt " + offsetAmount);
+                System.out.println(String.format("%1$tY%1$tm%1$td:%1$tH:%1$tM:%1$tS ",Calendar.getInstance(myExchangeObj.getExchangeTimeZone())) + "Placed Relative Order for " + symbol +" for "+ mktAction + " type STK " + " order ID " + ibOrderId + " limit " + limitPrice + " offsetAmt " + offsetAmount);
             }            
         }
         
@@ -348,8 +343,8 @@ public class IBInteraction implements EWrapper {
         
         myContract.m_symbol = symbol;
         myContract.m_secType = "STK";
-        myContract.m_exchange = exchangeName;
-        myContract.m_currency = exchangeCurrency;
+        myContract.m_exchange = myExchangeObj.getExchangeName();
+        myContract.m_currency = myExchangeObj.getExchangeCurrency();   
         
         myOrder.m_action = mktAction;
         myOrder.m_totalQuantity = qty;
@@ -363,7 +358,7 @@ public class IBInteraction implements EWrapper {
             ibClient.placeOrder(ibOrderId, myContract, myOrder);
 
             if (debugFlag) {
-                System.out.println(String.format("%1$tY%1$tm%1$td:%1$tH:%1$tM:%1$tS ",Calendar.getInstance(exchangeTimeZone)) + "Placed Market Order for " + symbol +" for "+ mktAction + " type STK " + " order ID " + ibOrderId);
+                System.out.println(String.format("%1$tY%1$tm%1$td:%1$tH:%1$tM:%1$tS ",Calendar.getInstance(myExchangeObj.getExchangeTimeZone())) + "Placed Market Order for " + symbol +" for "+ mktAction + " type STK " + " order ID " + ibOrderId);
             }            
         }
         
@@ -378,8 +373,8 @@ public class IBInteraction implements EWrapper {
         
         myContract.m_symbol = symbol;
         myContract.m_secType = "FUT";
-        myContract.m_exchange = exchangeName;
-        myContract.m_currency = exchangeCurrency;
+        myContract.m_exchange = myExchangeObj.getExchangeName();
+        myContract.m_currency = myExchangeObj.getExchangeCurrency();   
         myContract.m_expiry = expiry;
         
         myOrder.m_action = mktAction;
@@ -398,7 +393,7 @@ public class IBInteraction implements EWrapper {
             getNextOrderStatusArrayIndex(ibOrderId);
             ibClient.placeOrder(ibOrderId, myContract, myOrder);
             if (debugFlag) {
-                System.out.println(String.format("%1$tY%1$tm%1$td:%1$tH:%1$tM:%1$tS ",Calendar.getInstance(exchangeTimeZone)) + "Placed Relative Order for " + symbol +" for "+ mktAction + " type FUT " + " expiry "+ expiry + " order ID " + ibOrderId + " limit " + limitPrice + " offsetAmt " + offsetAmount);
+                System.out.println(String.format("%1$tY%1$tm%1$td:%1$tH:%1$tM:%1$tS ",Calendar.getInstance(myExchangeObj.getExchangeTimeZone())) + "Placed Relative Order for " + symbol +" for "+ mktAction + " type FUT " + " expiry "+ expiry + " order ID " + ibOrderId + " limit " + limitPrice + " offsetAmt " + offsetAmount);
             }            
         }
         
@@ -413,8 +408,8 @@ public class IBInteraction implements EWrapper {
         
         myContract.m_symbol = symbol;
         myContract.m_secType = "FUT";
-        myContract.m_exchange = exchangeName;
-        myContract.m_currency = exchangeCurrency;
+        myContract.m_exchange = myExchangeObj.getExchangeName();
+        myContract.m_currency = myExchangeObj.getExchangeCurrency();   
         myContract.m_expiry = expiry;
         
         myOrder.m_action = mktAction;
@@ -429,7 +424,7 @@ public class IBInteraction implements EWrapper {
             getNextOrderStatusArrayIndex(ibOrderId);
             ibClient.placeOrder(ibOrderId, myContract, myOrder);
             if (debugFlag) {
-                System.out.println(String.format("%1$tY%1$tm%1$td:%1$tH:%1$tM:%1$tS ",Calendar.getInstance(exchangeTimeZone)) + "Placed Market Order for " + symbol +" for "+ mktAction + " type FUT " + " expiry "+ expiry + " order ID " + ibOrderId);
+                System.out.println(String.format("%1$tY%1$tm%1$td:%1$tH:%1$tM:%1$tS ",Calendar.getInstance(myExchangeObj.getExchangeTimeZone())) + "Placed Market Order for " + symbol +" for "+ mktAction + " type FUT " + " expiry "+ expiry + " order ID " + ibOrderId);
             }            
         }
         
@@ -469,11 +464,11 @@ public class IBInteraction implements EWrapper {
         if (tickerId > IBTICKARRAYINDEXOFFSET) { 
             if (field == 1) {
                 myBidAskPriceDetails[tickerId - IBTICKARRAYINDEXOFFSET].symbolBidPrice = price;                                    
-                System.out.println("bidPrice " + price +" tickerId "+ tickerId + " Time " + String.format("%1$tY%1$tm%1$td%1$tH%1$tM%1$tS",Calendar.getInstance(exchangeTimeZone)) );
+                System.out.println("bidPrice " + price +" tickerId "+ tickerId + " Time " + String.format("%1$tY%1$tm%1$td%1$tH%1$tM%1$tS",Calendar.getInstance(myExchangeObj.getExchangeTimeZone())) );
             }
             if (field == 2) {
                 myBidAskPriceDetails[tickerId - IBTICKARRAYINDEXOFFSET].symbolAskPrice = price;                                    
-                System.out.println("askPrice " + price +" tickerId "+ tickerId + " Time " + String.format("%1$tY%1$tm%1$td%1$tH%1$tM%1$tS",Calendar.getInstance(exchangeTimeZone)) );
+                System.out.println("askPrice " + price +" tickerId "+ tickerId + " Time " + String.format("%1$tY%1$tm%1$td%1$tH%1$tM%1$tS",Calendar.getInstance(myExchangeObj.getExchangeTimeZone())) );
             }
         } else {
             for (int index = 0; index < myTickDetails.length; index++ ) {         
@@ -582,7 +577,7 @@ public class IBInteraction implements EWrapper {
                 myOrderStatusDetails[index].filledPrice= avgFillPrice;
                 myOrderStatusDetails[index].updateTime = System.currentTimeMillis();                    
                 if (debugLevel > 4) {
-                    System.out.println(String.format("%1$tY%1$tm%1$td:%1$tH:%1$tM:%1$tS ",Calendar.getInstance(exchangeTimeZone)) + "OrderId " + orderId +" status "+ status + " filled qty "+ filled + " remaining qty " + remaining + " average fill price " + avgFillPrice + " last filled price " + lastFillPrice);            
+                    System.out.println(String.format("%1$tY%1$tm%1$td:%1$tH:%1$tM:%1$tS ",Calendar.getInstance(myExchangeObj.getExchangeTimeZone())) + "OrderId " + orderId +" status "+ status + " filled qty "+ filled + " remaining qty " + remaining + " average fill price " + avgFillPrice + " last filled price " + lastFillPrice);            
                 }
             }                         
         }             

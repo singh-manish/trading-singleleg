@@ -53,7 +53,7 @@ public class MonitorManualInterventionSignals extends Thread {
    public singlelegtrading.SingleLegTrading.MyManualInterventionClass[] myMIDetails;   
    private static final int MAXALLOWEDOPENSLOTS = 50;      
    
-   MonitorManualInterventionSignals(String name, JedisPool redisConnectionPool, String redisConfigKey,  TimeZone exTZ, singlelegtrading.SingleLegTrading.MyManualInterventionClass[] miDetails, boolean debugIndicator){
+   MonitorManualInterventionSignals(String name, JedisPool redisConnectionPool, String redisConfigKey,  MyExchangeClass exchangeObj, singlelegtrading.SingleLegTrading.MyManualInterventionClass[] miDetails, boolean debugIndicator){
 
         threadName = name;
         debugFlag = debugIndicator;
@@ -63,7 +63,7 @@ public class MonitorManualInterventionSignals extends Thread {
         myUtils = new MyUtils();
         
         redisConfigurationKey = redisConfigKey;
-        exchangeTimeZone = exTZ;
+        exchangeTimeZone = exchangeObj.getExchangeTimeZone();
         TimeZone.setDefault(exchangeTimeZone);
         
         //"pairstr01", "INRSTR01OPENPOSITIONS", "INRSTR01ENTRYSIGNALS"        

@@ -54,14 +54,10 @@ public class SingleLegTrading {
     }
     public MyManualInterventionClass[] myMIDetails;
 
-   private static final int MAXALLOWEDOPENSLOTS = 50;  
- 
-   public static TimeZone exchangeTimeZone = TimeZone.getTimeZone("Asia/Calcutta");
-   private static int exchangeStartTimeHHMM = 915;
-   private static int exchangeStartTimeHHMMSS = 91501;
-   private static int exchangeCloseTimeHHMM = 1529;
-   private static int exchangeCloseTimeHHMMSS = 152959;
+   private static final int MAXALLOWEDOPENSLOTS = 50;
    
+   private static MyExchangeClass myExchangeObj;
+    
    
    SingleLegTrading(String redisIP, int redisPort, String redisConfigKey, String ibIP, int ibPort, int ibClientID, String exchangeCurrency, boolean debugIndicator){
         // Set Debug Flag 
@@ -75,24 +71,13 @@ public class SingleLegTrading {
         myUtils = new MyUtils();
         redisConfigurationKey = redisConfigKey;
 
-        if (exchangeCurrency.equalsIgnoreCase("inr")) {
-            exchangeTimeZone = TimeZone.getTimeZone("Asia/Calcutta");
-            exchangeStartTimeHHMM = 915;
-            exchangeStartTimeHHMMSS = 91501;
-            exchangeCloseTimeHHMM = 1529;
-            exchangeCloseTimeHHMMSS = 152959;            
-        } else if (exchangeCurrency.equalsIgnoreCase("usd")) {
-            exchangeTimeZone = TimeZone.getTimeZone("America/New_York");            
-            exchangeStartTimeHHMM = 930;
-            exchangeStartTimeHHMMSS = 93001;
-            exchangeCloseTimeHHMM = 1559;
-            exchangeCloseTimeHHMMSS = 155959;            
-        }
-        TimeZone.setDefault(exchangeTimeZone);
+        myExchangeObj = new MyExchangeClass(exchangeCurrency);
+
+        TimeZone.setDefault(myExchangeObj.getExchangeTimeZone());
         
         ibOrderIDKeyName = myUtils.getHashMapValueFromRedis(jedisPool,redisConfigurationKey, "ORDERIDFIELDKEYNAME",false);        
         exchangeHolidayListKeyName = myUtils.getHashMapValueFromRedis(jedisPool,redisConfigurationKey, "EXCHANGEHOLIDAYLISTKEYNAME",false);           
-        ibInteractionClient = new IBInteraction(jedisPool,ibOrderIDKeyName,ibIP,ibPort,ibClientID, exchangeTimeZone);
+        ibInteractionClient = new IBInteraction(jedisPool, ibOrderIDKeyName, ibIP, ibPort, ibClientID, myExchangeObj);
         
         myMIDetails = new MyManualInterventionClass[MAXALLOWEDOPENSLOTS];                
         for (int index = 0; index < myMIDetails.length; index++ ) {         
@@ -137,18 +122,18 @@ public class SingleLegTrading {
         SingleLegTrading myComboTradingSystem = new SingleLegTrading(args[1],Integer.parseInt(args[2]),args[3],args[4],Integer.parseInt(args[5]),Integer.parseInt(args[6]),args[7], tempFlag);
         
         // Set default timezone
-        TimeZone.setDefault(exchangeTimeZone);
+        TimeZone.setDefault(myExchangeObj.getExchangeTimeZone());
         // Consolidate all open positions to serial from first position        
         myUtils.defragmentOpenPositionsQueue(jedisPool, redisConfigurationKey, true);
                 
-        if ( (!myUtils.fallsOnExchangeHoliday("Exchange is closed today", myUtils.getKeyValueFromRedis(jedisPool, exchangeHolidayListKeyName, false), Calendar.getInstance(exchangeTimeZone), debugFlag)) ) {
+        if ( (!myUtils.fallsOnExchangeHoliday("Exchange is closed today", myUtils.getKeyValueFromRedis(jedisPool, exchangeHolidayListKeyName, false), Calendar.getInstance(myExchangeObj.getExchangeTimeZone()), debugFlag)) ) {
             // Check if current time is outside Exchange Operating hours, then keep waiting for exchange to open
 
-            myUtils.waitForStartTime(exchangeStartTimeHHMM, exchangeTimeZone, "Exchange to open", debugFlag);
+            myUtils.waitForStartTime(myExchangeObj.getExchangeStartTimeHHMM(), myExchangeObj.getExchangeTimeZone(), "Exchange to open", debugFlag);
 
             // Keep trying to establish Connection with IB Client till 15 minutes to market closing time 
             while ( (!myComboTradingSystem.ibInteractionClient.connectToIB(120)) &&
-                    (Integer.parseInt(String.format("%1$tH%1$tM",Calendar.getInstance(exchangeTimeZone))) < (exchangeCloseTimeHHMM - 12) ) ) {
+                    (Integer.parseInt(String.format("%1$tH%1$tM",Calendar.getInstance(myExchangeObj.getExchangeTimeZone()))) < (myExchangeObj.getExchangeCloseTimeHHMM() - 12) ) ) {
                 myUtils.waitForNSeconds(300); 
             }
 
@@ -158,24 +143,24 @@ public class SingleLegTrading {
             }
 
             // Spawn a thread to monitor the manual intervention signals queue
-            MonitorManualInterventionSignals monitorManualInterventionSignalsQueue = new MonitorManualInterventionSignals("MonitoringManualInterventionsSignalsThread", jedisPool, redisConfigurationKey, exchangeTimeZone, myComboTradingSystem.myMIDetails, debugFlag);
+            MonitorManualInterventionSignals monitorManualInterventionSignalsQueue = new MonitorManualInterventionSignals("MonitoringManualInterventionsSignalsThread", jedisPool, redisConfigurationKey, myExchangeObj, myComboTradingSystem.myMIDetails, debugFlag);
             monitorManualInterventionSignalsQueue.start();  
             
             // Spawn a thread to monitor the entry signal queue
-            MonitorEntrySignals monitorEntrySignalsQueue = new MonitorEntrySignals("MonitoringEntrySignalsThread", jedisPool, myComboTradingSystem.ibInteractionClient, redisConfigurationKey, exchangeTimeZone, debugFlag);
+            MonitorEntrySignals monitorEntrySignalsQueue = new MonitorEntrySignals("MonitoringEntrySignalsThread", jedisPool, myComboTradingSystem.ibInteractionClient, redisConfigurationKey, myExchangeObj, debugFlag);
             monitorEntrySignalsQueue.start();          
 
             // Spawn a thread to read the current open positions from Redis queue
             // For each open position, spawn another monitoring thread is spawned.
-            MonitorOpenPositions4Exit monitorOpenPositionsQueue = new MonitorOpenPositions4Exit("MonitoringOpenPositionsForExitThread", jedisPool, myComboTradingSystem.ibInteractionClient, redisConfigurationKey, exchangeTimeZone, myComboTradingSystem.myMIDetails, debugFlag);
+            MonitorOpenPositions4Exit monitorOpenPositionsQueue = new MonitorOpenPositions4Exit("MonitoringOpenPositionsForExitThread", jedisPool, myComboTradingSystem.ibInteractionClient, redisConfigurationKey, myExchangeObj, myComboTradingSystem.myMIDetails, debugFlag);
             monitorOpenPositionsQueue.start();          
             
             // Keep running the program till it is Exchange Closing time
             boolean exitNow = false;
             while (!exitNow) {
-                Calendar timeNow = Calendar.getInstance(exchangeTimeZone);        
+                Calendar timeNow = Calendar.getInstance(myExchangeObj.getExchangeTimeZone());        
                 // Provision for exiting if time has reached outside market hours or on weekends for NSE
-                if (Integer.parseInt(String.format("%1$tH%1$tM%1$tS",timeNow)) > exchangeCloseTimeHHMMSS) {
+                if (Integer.parseInt(String.format("%1$tH%1$tM%1$tS",timeNow)) >= myExchangeObj.getExchangeCloseTimeHHMMSS() ) {
                     exitNow = true;
                     System.out.println(String.format("%1$tY%1$tm%1$td%1$tH%1$tM%1$tS",timeNow) + " : Exiting as reaching Outside market hours");                           
                     if (debugFlag) {

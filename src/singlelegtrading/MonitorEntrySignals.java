@@ -50,10 +50,12 @@ public class MonitorEntrySignals extends Thread {
    private String strategyName = "singlestr01";
    private String openPositionsQueueKeyName = "INRSTR01OPENPOSITIONS";
    private String closedPositionsQueueKeyName = "INRSTR01CLOSEDPOSITIONS";
+   private String pastClosedPositionsQueueKeyName = "INRSTR01PASTCLOSEDPOSITIONS";   
    private String entrySignalsQueueKeyName ="INRSTR01ENTRYSIGNALS";
    private String confOrderType = "MARKET";
    private String duplicateComboAllowed = "yes";
-   private String duplicateLegAllowed = "yes";   
+   private String duplicateLegAllowed = "yes";
+
    private int MAXPOSITIONS = 5;
    private double MAXCOMBOSPREAD = 300000.0;
    
@@ -76,7 +78,7 @@ public class MonitorEntrySignals extends Thread {
 
    private int minimumMoratoriumForPosition = 37;
       
-   MonitorEntrySignals(String name, JedisPool redisConnectionPool, IBInteraction ibInterClient, String redisConfigKey, TimeZone exTZ, boolean debugIndicator){
+   MonitorEntrySignals(String name, JedisPool redisConnectionPool, IBInteraction ibInterClient, String redisConfigKey, MyExchangeClass exchangeObj, boolean debugIndicator){
 
         threadName = name;
         debugFlag = debugIndicator;
@@ -89,13 +91,14 @@ public class MonitorEntrySignals extends Thread {
         
         redisConfigurationKey = redisConfigKey;
         
-        exchangeTimeZone = exTZ;
+        exchangeTimeZone = exchangeObj.getExchangeTimeZone();
         TimeZone.setDefault(exchangeTimeZone);
         
         //"singlestr01", "INRSTR01OPENPOSITIONS", "INRSTR01ENTRYSIGNALS"        
         strategyName = myUtils.getHashMapValueFromRedis(jedisPool,redisConfigurationKey, "STRATEGYNAME",false);        
         openPositionsQueueKeyName = myUtils.getHashMapValueFromRedis(jedisPool,redisConfigurationKey, "OPENPOSITIONSQUEUE",false);
         closedPositionsQueueKeyName = myUtils.getHashMapValueFromRedis(jedisPool,redisConfigurationKey, "CLOSEDPOSITIONSQUEUE",false);
+        pastClosedPositionsQueueKeyName = myUtils.getHashMapValueFromRedis(jedisPool,redisConfigurationKey, "PASTCLOSEDPOSITIONSQUEUE",false);        
         entrySignalsQueueKeyName = myUtils.getHashMapValueFromRedis(jedisPool,redisConfigurationKey, "ENTRYSIGNALSQUEUE",false);
         confOrderType = myUtils.getHashMapValueFromRedis(jedisPool,redisConfigurationKey, "ENTRYORDERTYPE",false);
 
@@ -104,7 +107,8 @@ public class MonitorEntrySignals extends Thread {
 
         minimumMoratoriumForPosition = Integer.parseInt(myUtils.getHashMapValueFromRedis(jedisPool,redisConfigurationKey, "MINIMUMMORATORIUMFORPOSITION",false));
                 
-        exchangeHolidayListKeyName = myUtils.getHashMapValueFromRedis(jedisPool,redisConfigurationKey, "EXCHANGEHOLIDAYLISTKEYNAME",false);         
+        exchangeHolidayListKeyName = myUtils.getHashMapValueFromRedis(jedisPool,redisConfigurationKey, "EXCHANGEHOLIDAYLISTKEYNAME",false);
+        
         MAXPOSITIONS = Integer.parseInt(myUtils.getHashMapValueFromRedis(jedisPool,redisConfigurationKey, "MAXNUMPAIRPOSITIONS",false));
         MAXCOMBOSPREAD = Double.parseDouble(myUtils.getHashMapValueFromRedis(jedisPool,redisConfigurationKey, "MAXALLOWEDPAIRSPREAD",false));
         
@@ -169,17 +173,17 @@ public class MonitorEntrySignals extends Thread {
                 (Integer.parseInt(String.format("%1$tH%1$tM",timeNow)) <= lastEntryOrderTime) ) {
             returnValue = true;
             // Debug Message
-            //System.out.println("Within entry Order Time Limits Range. Time Now :" + String.format("%1$tY%1$tm%1$td%1$tH%1$tM%1$tS",timeNow) + " first " + firstEntryOrderTimeConfigValue + " last " + lastEntryOrderTimeConfigValue);                            
+            System.out.println("Within entry Order Time Limits Range. Time Now :" + String.format("%1$tY%1$tm%1$td%1$tH%1$tM%1$tS",timeNow) + " first " + firstEntryOrderTimeConfigValue + " last " + lastEntryOrderTimeConfigValue);                            
         } else {
             returnValue = false;
             // Debug Message
-            //System.out.println("Outside entry Order Time Limits Range. Time Now :" + String.format("%1$tY%1$tm%1$td%1$tH%1$tM%1$tS",timeNow)+ " first " + firstEntryOrderTimeConfigValue + " last " + lastEntryOrderTimeConfigValue);
+            System.out.println("Outside entry Order Time Limits Range. Time Now :" + String.format("%1$tY%1$tm%1$td%1$tH%1$tM%1$tS",timeNow)+ " first " + firstEntryOrderTimeConfigValue + " last " + lastEntryOrderTimeConfigValue);
         }         
 
         if (myUtils.checkIfStaleMessage(entryTimeStamp,String.format("%1$tY%1$tm%1$td%1$tH%1$tM%1$tS",timeNow),5)) {
             returnValue = false;
             // Debug Message
-            //System.out.println("Stale Order by more than 5 minutes. Entry Time Stamp " + entryTimeStamp + " Time Now :" + String.format("%1$tY%1$tm%1$td%1$tH%1$tM%1$tS",timeNow));                                                    
+            System.out.println("Stale Order by more than 5 minutes. Entry Time Stamp " + entryTimeStamp + " Time Now :" + String.format("%1$tY%1$tm%1$td%1$tH%1$tM%1$tS",timeNow));                                                    
         }
         
         return(returnValue);
@@ -203,7 +207,7 @@ public class MonitorEntrySignals extends Thread {
         }
 
         // Debug Message
-        //System.out.println("Spread Value :" + currentSpread + "Max Allowed spread :" + MAXCOMBOSPREAD + " returning : " + returnValue);                            
+        System.out.println("Spread Value :" + currentSpread + "Max Allowed spread :" + MAXCOMBOSPREAD + " returning : " + returnValue);                            
         
         return(returnValue);
     }  
@@ -227,7 +231,7 @@ public class MonitorEntrySignals extends Thread {
         }
 
         // Debug Message
-        //System.out.println("Halflife Value :" + currentHalflife + " Min Allowed HalfLife : " + MINHALFLIFE + " Max Allowed HalfLife : " + MAXHALFLIFE  + " returning : " + returnValue);                            
+        System.out.println("Halflife Value :" + currentHalflife + " Min Allowed HalfLife : " + MINHALFLIFE + " Max Allowed HalfLife : " + MAXHALFLIFE  + " returning : " + returnValue);                            
         
         return(returnValue);
     }     
@@ -251,7 +255,7 @@ public class MonitorEntrySignals extends Thread {
         }
         
         // Debug Message
-        //System.out.println("ZScore Value :" + currentZScore + " Min Allowed ZScore : " + MINZSCORE + " Max Allowed ZScore : " + MAXZSCORE + " returning : " + returnValue);                            
+        System.out.println("ZScore Value :" + currentZScore + " Min Allowed ZScore : " + MINZSCORE + " Max Allowed ZScore : " + MAXZSCORE + " returning : " + returnValue);                            
         
         return(returnValue);
     }
@@ -310,7 +314,7 @@ public class MonitorEntrySignals extends Thread {
         }
 
         // Debug Message
-        //System.out.println(String.format("%1$tY%1$tm%1$td:%1$tH:%1$tM:%1$tS ",Calendar.getInstance(exchangeTimeZone)) + "Info : DaysPnL :" + currentDayPnL + " dayTakeProfitLimit : " + dayTakeProfitLimit + " dayStopLossLimit : " + dayStopLossLimit + " returning : " + returnValue);                            
+        System.out.println(String.format("%1$tY%1$tm%1$td:%1$tH:%1$tM:%1$tS ",Calendar.getInstance(exchangeTimeZone)) + "Info : DaysPnL :" + currentDayPnL + " dayTakeProfitLimit : " + dayTakeProfitLimit + " dayStopLossLimit : " + dayStopLossLimit + " returning : " + returnValue);                            
         
         return(returnValue);
     }
@@ -352,7 +356,7 @@ public class MonitorEntrySignals extends Thread {
         }
 
         // Debug Message
-        //System.out.println("numOpenPositions :" + numOpenPositions + " Max Allowed positions :" + MAXPOSITIONS + " Already Existing Status : " + alreadyExisting + " returning : " + returnValue + "for " + newSignalComboName);                            
+        System.out.println("numOpenPositions :" + numOpenPositions + " Max Allowed positions :" + MAXPOSITIONS + " Already Existing Status : " + alreadyExisting + " returning : " + returnValue + "for " + newSignalComboName);                            
 
         return(returnValue);
     }
@@ -369,20 +373,79 @@ public class MonitorEntrySignals extends Thread {
             TradingObject myTradeObject = new TradingObject(myUtils.getHashMapValueFromRedis(jedisPool, closedPositionsQueueKeyName, Integer.toString(indexNumber),debugFlag));                                                       
             if (myTradeObject.getTradingObjectName().matches(newSignalComboName)) {
                 // new position has been trades in past
-                lastTradeTimeStamp = myTradeObject.getExitTimeStamp();                
-                // exit Time stamp of past trade occurs in the same day as new proposed entry
-                // make returnValue false if exit timestamp of existing position and now/new position is < 37 bars i.e. one trading day equivalent
-                int elapsedTradingMinutes = 10 * myUtils.calcElapsedBars(jedisPool, lastTradeTimeStamp, entryTimeStamp, exchangeTimeZone, exchangeHolidayListKeyName, false);
-                if (elapsedTradingMinutes <= minimumMoratoriumForPosition) {
-                    returnValue = false;                        
+                // check if exit was due to loss. if loss then apply moratorium else not
+                double roundTripBrokerage = Double.parseDouble(myTradeObject.getEntrySpread()) * (0.01 + 0.0019 + 0.0001) / 100;
+                if (myTradeObject.getEntryTimeStamp().substring(0,8).matches(myTradeObject.getExitTimeStamp().substring(0,8))) {
+                    roundTripBrokerage = roundTripBrokerage + Double.parseDouble(myTradeObject.getExitSpread()) * (0.01 + 0.0019 + 0.0001) / 100;                    
+                } else {
+                    roundTripBrokerage = roundTripBrokerage + Double.parseDouble(myTradeObject.getExitSpread()) * (0.01 + 0.0019 + 0.0001) / 100;                    
+                }
+                double tradePnL = 0;
+                if (Integer.parseInt(myTradeObject.getSideAndSize()) > 0) {
+                    tradePnL += Double.parseDouble(myTradeObject.getExitSpread()) - Double.parseDouble(myTradeObject.getEntrySpread()) - roundTripBrokerage;
+                } else if (Integer.parseInt(myTradeObject.getSideAndSize()) < 0) {
+                    tradePnL += Double.parseDouble(myTradeObject.getEntrySpread()) - Double.parseDouble(myTradeObject.getExitSpread()) - roundTripBrokerage;
+                }
+                if (tradePnL < 0) {
+                    lastTradeTimeStamp = myTradeObject.getExitTimeStamp();                
+                    // exit Time stamp of past trade occurs in the same day as new proposed entry
+                    // make returnValue false if exit timestamp of existing position and now/new position is < 37 bars i.e. one trading day equivalent
+                    int elapsedTradingMinutes = 10 * myUtils.calcElapsedBars(jedisPool, lastTradeTimeStamp, entryTimeStamp, exchangeTimeZone, exchangeHolidayListKeyName, false);
+                    if (elapsedTradingMinutes <= minimumMoratoriumForPosition) {
+                        returnValue = false;                                                
+                    }
+                } else {
+                    lastTradeTimeStamp = myTradeObject.getExitTimeStamp();                
+                    // exit Time stamp of past trade occurs in the same day as new proposed entry
+                    // make returnValue false if exit timestamp of existing position and now/new position is < 37 bars i.e. one trading day equivalent
+                    int elapsedTradingMinutes = 10 * myUtils.calcElapsedBars(jedisPool, lastTradeTimeStamp, entryTimeStamp, exchangeTimeZone, exchangeHolidayListKeyName, false);
+                    if (elapsedTradingMinutes <= minimumMoratoriumForPosition) {
+                        returnValue = false;                                                
+                    }                    
                 }
             }
             indexNumber++;
         }   
 
         // Debug Message
-        //System.out.println("lastTradeTimeStamp :" + lastTradeTimeStamp + " currentTimeStamp :" + entryTimeStamp + " returning : " + returnValue + " for " + newSignalComboName);                            
+        System.out.println("lastTradeTimeStamp :" + lastTradeTimeStamp + " currentTimeStamp :" + entryTimeStamp + " returning : " + returnValue + " for " + newSignalComboName);                            
 
+        return(returnValue);
+    }
+    
+    boolean notBlackListed(String blacklistedSymbols, String signalSymbol) {
+        boolean notFound = true;
+        
+        if ((blacklistedSymbols.length() > 1) && (signalSymbol.length() > 1) ) {
+            
+            String symbolName = "";
+            if (signalSymbol.split("_").length > 1) {
+                symbolName = signalSymbol.split("_")[1];
+            }
+            String symbolsList[] = blacklistedSymbols.split(",");
+            for (String symbol : symbolsList) {
+                if (symbolName.equalsIgnoreCase(symbol)) {
+                    notFound = false;
+                }
+            }            
+        }
+        
+        return(notFound);
+    }
+    
+    boolean checkIfLongOrShortEntryAllowed(String allowLongIndicator, String allowShortIndicator, String side) {
+        boolean returnValue = true;
+        
+        if ((allowLongIndicator.equalsIgnoreCase("yes")) && (allowShortIndicator.equalsIgnoreCase("yes")) ) {
+            returnValue = true;
+        } else {
+            if ((!(allowLongIndicator.equalsIgnoreCase("yes"))) && (Integer.parseInt(side) > 0 ) ){
+                returnValue = false;
+            }
+            if ((!(allowShortIndicator.equalsIgnoreCase("yes"))) && (Integer.parseInt(side) < 0 ) ){
+                returnValue = false;
+            }            
+        }
         return(returnValue);
     }
     
@@ -397,7 +460,6 @@ public class MonitorEntrySignals extends Thread {
 
         myUtils.waitForStartTime(firstEntryOrderTime, exchangeTimeZone, "first entry order time", false);
         
-        // Enter an infinite loop with blocking pop call to retireve messages from queue
         String entrySignalReceived = null;
 
         int eodExitTime = 1530;
@@ -406,10 +468,12 @@ public class MonitorEntrySignals extends Thread {
             eodExitTime = Integer.parseInt(eodExitTimeConfigValue);
         }        
 
+        // Enter an infinite loop with blocking pop call to retireve messages from queue
         // while market is open. Now start monitoring the open positions queue
         while (myUtils.marketIsOpen(eodExitTime,exchangeTimeZone, false)) {
-            entrySignalReceived = myUtils.popKeyValueFromQueueRedis(jedisPool,entrySignalsQueueKeyName,120,false);
+            entrySignalReceived = myUtils.popKeyValueFromQueueRedis(jedisPool,entrySignalsQueueKeyName,60,false);
             if (entrySignalReceived != null) {
+                System.out.println(String.format("%1$tY%1$tm%1$td:%1$tH:%1$tM:%1$tS ",Calendar.getInstance(exchangeTimeZone)) + "Info : Received Entry Signal as : " + entrySignalReceived );                
                 // Read the Maximum Possible Positions
                 MAXPOSITIONS = Integer.parseInt(myUtils.getHashMapValueFromRedis(jedisPool,redisConfigurationKey, "MAXNUMPAIRPOSITIONS",false));
                 // Read the Max Allowable apread for pair
@@ -418,8 +482,11 @@ public class MonitorEntrySignals extends Thread {
                 MAXNUMENTRIESINADAY = Integer.parseInt(myUtils.getHashMapValueFromRedis(jedisPool,redisConfigurationKey, "MAXNUMENTRIESINADAY",false));                
                 // Read the Days takeProfitLimit and stopLossLimit for no further new positions
                 NOFURTHERPOSITIONTAKEPROFITLIMIT = Double.parseDouble(myUtils.getHashMapValueFromRedis(jedisPool,redisConfigurationKey, "NOFURTHERPOSITIONTAKEPROFITLIMIT",false));                
-                NOFURTHERPOSITIONSTOPLOSSLIMIT = Double.parseDouble(myUtils.getHashMapValueFromRedis(jedisPool,redisConfigurationKey, "NOFURTHERPOSITIONSTOPLOSSLIMIT",false));                                
-
+                NOFURTHERPOSITIONSTOPLOSSLIMIT = Double.parseDouble(myUtils.getHashMapValueFromRedis(jedisPool,redisConfigurationKey, "NOFURTHERPOSITIONSTOPLOSSLIMIT",false));
+                String blackListedSymbols = myUtils.getHashMapValueFromRedis(jedisPool,redisConfigurationKey, "BLACKLISTEDSYMBOLS",false);
+                String allowLongIndicator = myUtils.getHashMapValueFromRedis(jedisPool,redisConfigurationKey, "ALLOWLONGENTRY",false);
+                String allowShortIndicator = myUtils.getHashMapValueFromRedis(jedisPool,redisConfigurationKey, "ALLOWSHORTENTRY",false);
+                
                 String[] entrySignal = entrySignalReceived.split(",");
                 // check if current time is within stipulated entry order time range and not stale by more than 5 minutes.
                 // check if spread is not more than stipulated spread (say 200000 INR for NSE
@@ -429,9 +496,9 @@ public class MonitorEntrySignals extends Thread {
                         withinStipulatedSpreadRange(entrySignal[TradingObject.ENTRY_SPREAD_INDEX]) &&
                         checkExistingOpenPositions(openPositionsQueueKeyName, entrySignal[TradingObject.ENTRY_TIMESTAMP_INDEX],entrySignal[TradingObject.NAME_INDEX]) && 
                         (nextOpenSlotNumber < MAXALLOWEDOPENSLOTS) &&
-                        withinStipulatedZScoreRange(entrySignal[TradingObject.ENTRY_ZSCORE_INDEX]) &&
-                        withinStipulatedHalflifeRange(entrySignal[TradingObject.ENTRY_HALFLIFE_INDEX]) &&
                         checkLastTradeTimeStamp(closedPositionsQueueKeyName, entrySignal[TradingObject.ENTRY_TIMESTAMP_INDEX],entrySignal[TradingObject.NAME_INDEX]) &&
+                        notBlackListed(blackListedSymbols,entrySignal[TradingObject.NAME_INDEX]) &&
+                        checkIfLongOrShortEntryAllowed(allowLongIndicator, allowShortIndicator, entrySignal[TradingObject.SIDE_SIZE_INDEX]) &&
                         withinStipulatedCurrentPnLForToday(MAXNUMENTRIESINADAY,openPositionsQueueKeyName,closedPositionsQueueKeyName,NOFURTHERPOSITIONTAKEPROFITLIMIT,NOFURTHERPOSITIONSTOPLOSSLIMIT) ) {
                     // Block position slot - doing it here outside entry thread to avoid race condition which is seen happeneing if done inside thread
                     while ((myUtils.checkIfExistsHashMapField(jedisPool, openPositionsQueueKeyName, Integer.toString(nextOpenSlotNumber),false)) && (nextOpenSlotNumber < MAXALLOWEDOPENSLOTS)) {
@@ -448,7 +515,11 @@ public class MonitorEntrySignals extends Thread {
                             initialStopLoss = Integer.parseInt(myUtils.getHashMapValueFromRedis(jedisPool,redisConfigurationKey, "INITIALSTOPLOSSAMOUNT",false));
                         } else if (initialStopLossType.equalsIgnoreCase("sigmafactor")) {
                             double stopLossFactor = Double.parseDouble(myUtils.getHashMapValueFromRedis(jedisPool,redisConfigurationKey, "INITIALSTOPLOSSSIGMAFACTOR",false));                            
-                            initialStopLoss = Math.abs((int) Math.round(stopLossFactor * Double.parseDouble(entrySignal[TradingObject.ENTRY_STDDEV_INDEX])));                            
+                            double oneSigmaAmount = Double.parseDouble(entrySignal[TradingObject.ENTRY_STDDEV_INDEX]);
+                            if (oneSigmaAmount <= 0) {
+                                oneSigmaAmount = 3000;
+                            }
+                            initialStopLoss = Math.abs((int) Math.round(stopLossFactor * oneSigmaAmount));                            
                         }
                     }             
                     // Enter the order

@@ -23,7 +23,6 @@ SOFTWARE.
  
 */
 
-
 package singlelegtrading;
 
 import java.io.FileWriter;
@@ -56,7 +55,6 @@ public class SingleLegExit implements Runnable {
     private String entryOrderStatus;
     
     private boolean mktDataSubscribed = false;
-    private double incrementPerBar = 178.0;
     
     // Define class to store definition
     private class MyLegObj {
@@ -101,34 +99,15 @@ public class SingleLegExit implements Runnable {
     // Define class to store Range for each pair
     private class MyRangeActionObj {
         double stopLossLimit,takeProfitLimit;
-        int pairId, thresholdPercentTakeProfit, thresholdPercentStopLoss, deviation;
+        int pairId, deviation;
         boolean stopLossLimitBreached, takeProfitLimitBreached;
-        int limitBreachAction2Take;
         String stopLossBreachActionStatus, takeProfitBreachActionStatus;
         long updatedtime;
         MyRangeActionObj(int identification, long lastUpdateTime) {
             pairId = identification;
-            thresholdPercentTakeProfit = 5;
-            thresholdPercentStopLoss = 4;
             deviation = 50;
             stopLossLimitBreached = false;
             takeProfitLimitBreached = false;
-            limitBreachAction2Take = 103000000;                
-            // action is integer of form 1xxxxxx where each x could be a number 0 to 9
-            // each non zero means corresponding action to be taken. 0 means no action.
-            // Action code is following. If Number is 1hgfedcba then 
-            // a == 0 do nothing. a == 1 square off
-            // b == 0 do nothing. b == 1 send notification through Email
-            // c == 0 do nothing. c >= 1  lower breach - square off  
-            // c >= 1. upper breach - move both breach limits by % of 2*c i.e. simulate trailing stop loss
-            // d == 0 do nothing. d >= 1  lower breach - square off  
-            // d >= 1. upper breach - move both breach limits by % of 5*d i.e. simulate trailing stop loss
-            // e == 0 do nothing. e >= 1  lower breach - square off  
-            // e >= 1. upper breach - move both breach limits by % of 10*e i.e. simulate trailing stop loss
-            // f == 0 do nothing. f >= 1  lower breach - square off  
-            // f >= 1. upper breach OR deviation more than 75 - move both breach limits by % of 5*f i.e. simulate trailing stop loss                
-            // g == 0 do nothing. g >= 1  lower breach - square off  
-            // g >= 1. upper breach OR deviation more than 75 - move both breach limits by % of 10*f i.e. simulate trailing stop loss         
             stopLossBreachActionStatus = "None";
             takeProfitBreachActionStatus = "None";              
             updatedtime = lastUpdateTime;                
@@ -142,24 +121,18 @@ public class SingleLegExit implements Runnable {
 
     private double legFilledPrice = 0.0;
     private String bidAskDetails = "";    
-    private String strategyExitType = "trailingstoploss";
+    private String strategyExitType = "halflifebased";
     private String orderTypeToUse = "market"; // market, relativewithzeroaslimitwithamountoffset, relativewithmidpointaslimitwithamountoffset, relativewithzeroaslimitwithpercentoffset, relativewithmidpointaslimitwithpercentoffset 
     private double initialStopLoss = 6000.0;
     private double initialTakeProfit = 5000.0;
     private String fileNameForLimitsStatusUpdates;
-
-    private double holdingPeriodFactorOfHalfLife = 1.0;    
-    private double minimumStopLossDistance = 1500;
-    private double minimumTakeProfitDistance = 1500;
-    private int percentReductionInGapBetweenStopLossAndTakeProfit = 70;
-    private int thresholdPercentGapForDeemedTakeProfitLimitHit = 5;
-    private int thresholdPercentGapForDeemedStopLossLimitHit = 4;
 
     public singlelegtrading.SingleLegTrading.MyManualInterventionClass[] manualInterventionSignal;
     
     public String exchangeHolidayListKeyName;
 
     private int IBTICKARRAYINDEXOFFSET = 50;
+    
   SingleLegExit(String name, JedisPool redisConnectionPool, IBInteraction ibIntClient, String redisConfigKey, TimeZone exTZ, int slotNum, singlelegtrading.SingleLegTrading.MyManualInterventionClass[] miSignal, boolean debugIndicator){
 
         threadName = name;
@@ -184,14 +157,8 @@ public class SingleLegExit implements Runnable {
         closedPositionsQueueKeyName = myUtils.getHashMapValueFromRedis(jedisPool, redisConfigurationKey, "CLOSEDPOSITIONSQUEUE", false);            
         strategyExitType = myUtils.getHashMapValueFromRedis(jedisPool, redisConfigurationKey, "EXITSTRATEGYTYPE", false);  
         orderTypeToUse = myUtils.getHashMapValueFromRedis(jedisPool,redisConfigurationKey, "EXITORDERTYPE",false);
-        holdingPeriodFactorOfHalfLife = Double.parseDouble(myUtils.getHashMapValueFromRedis(jedisPool,redisConfigurationKey, "MAXHOLDINGPERIOD",false));        
         initialStopLoss = Double.parseDouble(myUtils.getHashMapValueFromRedis(jedisPool,redisConfigurationKey, "INITIALSTOPLOSSAMOUNT",false));
         initialTakeProfit = Double.parseDouble(myUtils.getHashMapValueFromRedis(jedisPool,redisConfigurationKey, "INITIALTAKEPROFITAMOUNT",false));
-        minimumStopLossDistance = Double.parseDouble(myUtils.getHashMapValueFromRedis(jedisPool,redisConfigurationKey, "MINSTOPLOSSAMOUNT",false));
-        minimumTakeProfitDistance = Double.parseDouble(myUtils.getHashMapValueFromRedis(jedisPool,redisConfigurationKey, "MINTAKEPROFITAMOUNT",false));        
-        percentReductionInGapBetweenStopLossAndTakeProfit = Integer.parseInt(myUtils.getHashMapValueFromRedis(jedisPool,redisConfigurationKey, "PERCENTGAPREDUCTIONWITHEVERYTAKEPROFITHIT",false)); 
-        thresholdPercentGapForDeemedTakeProfitLimitHit = Integer.parseInt(myUtils.getHashMapValueFromRedis(jedisPool,redisConfigurationKey, "THRESHOLDPERCENTFORDEEMEDTAKEPROFITLIMITHIT",false)); 
-        thresholdPercentGapForDeemedStopLossLimitHit = Integer.parseInt(myUtils.getHashMapValueFromRedis(jedisPool,redisConfigurationKey, "THRESHOLDPERCENTFORDEEMEDSTOPLOSSLIMITHIT",false)); 
         exchangeHolidayListKeyName = myUtils.getHashMapValueFromRedis(jedisPool,redisConfigurationKey, "EXCHANGEHOLIDAYLISTKEYNAME",false); 
        
         String logDirectory = myUtils.getHashMapValueFromRedis(jedisPool,redisConfigurationKey, "LOGDIRECTORY",false);
@@ -207,8 +174,6 @@ public class SingleLegExit implements Runnable {
             fileNameForLimitsStatusUpdates = fileNameForLimitsStatusUpdates + myTradeObject.getEntryTimeStamp().substring(0, myTradeObject.getEntryTimeStamp().length()-2) + "00_ON_" + legObj.symbol + ".csv";
             
             rangeLimitObj = new MyRangeActionObj(slotNumber,Long.parseLong(myTradeObject.getLastUpdatedTimeStamp()));
-            rangeLimitObj.thresholdPercentTakeProfit = thresholdPercentGapForDeemedTakeProfitLimitHit;
-            rangeLimitObj.thresholdPercentStopLoss = thresholdPercentGapForDeemedStopLossLimitHit;
 
             if (myUtils.checkIfExistsHashMapField(jedisPool,redisConfigurationKey, "INITIALSTOPLOSSTYPE",false)) {
                 String initialStopLossType = myUtils.getHashMapValueFromRedis(jedisPool,redisConfigurationKey, "INITIALSTOPLOSSTYPE",false);
@@ -247,25 +212,6 @@ public class SingleLegExit implements Runnable {
                 rangeLimitObj.takeProfitLimit = Double.parseDouble(myTradeObject.getUpperBreach());                
             }            
 
-            if ( (myTradeObject.getHalfLife() != null) && (myTradeObject.getHalfLife().length() > 0) && (Double.parseDouble(myTradeObject.getHalfLife()) > 1 ) ) {
-                incrementPerBar = Double.parseDouble(myTradeObject.getEntryStdDev()) / Double.parseDouble(myTradeObject.getHalfLife());                
-            }
-
-            if (exchangeTimeZone.equals(TimeZone.getTimeZone("Asia/Calcutta"))) {
-                if (incrementPerBar > 300) {
-                    incrementPerBar = 301; 
-                }
-                if (incrementPerBar < 100) {
-                    incrementPerBar = 100; 
-                }
-            } else if (exchangeTimeZone.equals(TimeZone.getTimeZone("America/New_York"))) {
-                if (incrementPerBar > 2) {
-                    incrementPerBar = 2; 
-                }
-                if (incrementPerBar < 0.5) {
-                    incrementPerBar = 0.5; 
-                }
-            }                        
         }
 
         positionQty = legObj.qty;         
@@ -303,8 +249,8 @@ public class SingleLegExit implements Runnable {
                 if (debugFlag) {
                     System.out.println(String.format("%1$tY%1$tm%1$td:%1$tH:%1$tM:%1$tS ",Calendar.getInstance(exchangeTimeZone)) + legObj.symbol + " : " + "Reached last Exit Order Time at : " + String.format("%1$tY%1$tm%1$td%1$tH%1$tM%1$tS",timeNow) + " for Leg : " + legObj.symbol + " with lastExitOrderTIme as : " + lastExitOrderTime);                            
                 }
-                if (checkForSquareOffAtEOD() || checkForIndividualLimitsAtEOD()) {
-                    System.out.println(String.format("%1$tY%1$tm%1$td:%1$tH:%1$tM:%1$tS ",Calendar.getInstance(exchangeTimeZone)) + "Exiting Position : " + legObj.symbol + " as square Off at EOD is true - either due to last day of expiry OR it is intra-day strategy OR within + / - acceptable profit or loss");                            
+                if (checkForSquareOffAtEOD()) {
+                    System.out.println(String.format("%1$tY%1$tm%1$td:%1$tH:%1$tM:%1$tS ",Calendar.getInstance(exchangeTimeZone)) + "Exiting Position : " + legObj.symbol + " as square Off at EOD is true - either due to last day of expiry OR it is intra-day strategy");                            
                     orderTypeToUse = "market"; // Since it is end of Day trade with Markets about to close, use market order type irresepctive of what is configured
                     squareOffLegPosition(legObj);
                     if (positionQty == 0) {
@@ -376,8 +322,6 @@ public class SingleLegExit implements Runnable {
                             mktDataSubscribed = false;                            
                         }
                     }
-                    // Update Lower Limit and Upper Limit based on time bound expectation. 
-                    updateBreachLimitsBasedOnHoldingPeriod(timeNow,rangeLimitObj, incrementPerBar);
                     // Update prices
                     updateTickObj();
                     // Calculate the Breach Status 
@@ -426,7 +370,7 @@ public class SingleLegExit implements Runnable {
                         "," + rangeLimitObj.takeProfitBreachActionStatus +
                         "," + tickObj.comboLastPrice +
                         "," + tickObj.comboClosePrice +
-                        "," + incrementPerBar +
+                        "," +
                         "," + positionQty;
                 updateLimitsStatusToFile(fileNameForLimitsStatusUpdates, outputToWrite);
             }            
@@ -482,6 +426,8 @@ public class SingleLegExit implements Runnable {
                 returnValue = true;            
             }            
         }
+
+        System.out.println(String.format("%1$tY%1$tm%1$td:%1$tH:%1$tM:%1$tS ",Calendar.getInstance(exchangeTimeZone)) + "Info : Checking for Square Off at EOD for Leg " + legObj.symbol + ". Returning : " + returnValue );
         return(returnValue);
     }   
 
@@ -493,25 +439,29 @@ public class SingleLegExit implements Runnable {
         // rangeLimitObj has range details; 
         
         if (myUtils.checkIfExistsHashMapField(jedisPool, openPositionsQueueKeyName, Integer.toString(slotNumber), debugFlag)) {
-            // Since position exists, get exit status in case some profits are made or it is already at some stop loss beyond limit
-            if (legObj.qty > 0) {
-                System.out.println(String.format("%1$tY%1$tm%1$td:%1$tH:%1$tM:%1$tS ",Calendar.getInstance(exchangeTimeZone)) + "Info : EOD PnL for  Leg " + legObj.symbol + " : " + (tickObj.comboLastPrice - legObj.legEntryPrice) + " against 0.4 * Take Profit : " + (0.4 * initialTakeProfit) + " and 0.8 * -1 * Stop Loss : " + (0.8 * -1 * initialStopLoss) );                
-                // Leg is bought. Current price should be higher than current level for it to be in profit
-                if ((tickObj.comboLastPrice - legObj.legEntryPrice) > 0.4 * initialTakeProfit) {
-                    returnValue = true;
-                } else if ((tickObj.comboLastPrice - legObj.legEntryPrice) < 0.8 * -1 * initialStopLoss) {
-                    returnValue = true;                    
-                }
-            } else if (legObj.qty < 0 ) {
-                System.out.println(String.format("%1$tY%1$tm%1$td:%1$tH:%1$tM:%1$tS ",Calendar.getInstance(exchangeTimeZone)) + "Info : EOD PnL for  Leg " + legObj.symbol + " : " + (legObj.legEntryPrice - tickObj.comboLastPrice) + " against 0.4 * Take Profit : " + (0.4 * initialTakeProfit) + " and 0.8 * -1 * Stop Loss : " + (0.8 * -1 * initialStopLoss) );                
-                // Leg is Shorted. Current price should be Lower than current level for it to be in profit
-                if ((legObj.legEntryPrice - tickObj.comboLastPrice) > 0.4 * initialTakeProfit) {
-                    returnValue = true;
-                } else if ((legObj.legEntryPrice - tickObj.comboLastPrice) < 0.8 * -1 * initialStopLoss) {
-                    returnValue = true;                    
-                }
-            }                 
-        }                
+            if (strategyExitType.equalsIgnoreCase("halflifebased")) {
+                    returnValue = false;                
+            } else {
+                // Since position exists, get exit status in case some profits are made or it is already at some stop loss beyond limit
+                if (legObj.qty > 0) {
+                    System.out.println(String.format("%1$tY%1$tm%1$td:%1$tH:%1$tM:%1$tS ",Calendar.getInstance(exchangeTimeZone)) + "Info : EOD PnL for Leg " + legObj.symbol + " : " + (tickObj.comboLastPrice - legObj.legEntryPrice) + " i.e. " + "tickObj.comboLastPrice as " + tickObj.comboLastPrice + "legObj.legEntryPrice as " + legObj.legEntryPrice + " against 0.4 * Take Profit : " + (0.4 * initialTakeProfit) + " and 0.8 * -1 * Stop Loss : " + (0.8 * -1 * initialStopLoss) );                
+                    // Leg is bought. Current price should be higher than current level for it to be in profit
+                    if ((tickObj.comboLastPrice - legObj.legEntryPrice) > 0.4 * initialTakeProfit) {
+                        returnValue = true;
+                    } else if ((tickObj.comboLastPrice - legObj.legEntryPrice) < 0.8 * -1 * initialStopLoss) {
+                        returnValue = true;                    
+                    }
+                } else if (legObj.qty < 0 ) {
+                    System.out.println(String.format("%1$tY%1$tm%1$td:%1$tH:%1$tM:%1$tS ",Calendar.getInstance(exchangeTimeZone)) + "Info : EOD PnL for Leg " + legObj.symbol + " : " + (legObj.legEntryPrice - tickObj.comboLastPrice) + " i.e. " + "legObj.legEntryPrice as " + legObj.legEntryPrice + "tickObj.comboLastPrice as " + tickObj.comboLastPrice + " against 0.4 * Take Profit : " + (0.4 * initialTakeProfit) + " and 0.8 * -1 * Stop Loss : " + (0.8 * -1 * initialStopLoss) );                
+                    // Leg is Shorted. Current price should be Lower than current level for it to be in profit
+                    if ((legObj.legEntryPrice - tickObj.comboLastPrice) > 0.4 * initialTakeProfit) {
+                        returnValue = true;
+                    } else if ((legObj.legEntryPrice - tickObj.comboLastPrice) < 0.8 * -1 * initialStopLoss) {
+                        returnValue = true;                    
+                    }
+                }                                 
+            }            
+        }
         return(returnValue);
     }
     
@@ -607,20 +557,7 @@ public class SingleLegExit implements Runnable {
 
         rangeLimits.stopLossLimitBreached = false;
         rangeLimits.takeProfitLimitBreached = false;
-
-        double stopLossBreachLimit, takeProfitBreachLimit;
-        double legLastPrice = 0;
-
-        if ( legDef.qty > 0 ) {
-            stopLossBreachLimit = rangeLimits.stopLossLimit + ( (rangeLimits.takeProfitLimit - rangeLimits.stopLossLimit) * rangeLimits.thresholdPercentStopLoss / 100 );
-            takeProfitBreachLimit = rangeLimits.takeProfitLimit - ( (rangeLimits.takeProfitLimit - rangeLimits.stopLossLimit) * rangeLimits.thresholdPercentTakeProfit / 100 );            
-        } else if ( legDef.qty < 0 ) {
-            stopLossBreachLimit = rangeLimits.stopLossLimit - ( (rangeLimits.stopLossLimit - rangeLimits.takeProfitLimit) * rangeLimits.thresholdPercentStopLoss / 100 );
-            takeProfitBreachLimit = rangeLimits.takeProfitLimit + ( (rangeLimits.stopLossLimit - rangeLimits.takeProfitLimit ) * rangeLimits.thresholdPercentTakeProfit / 100 );            
-        } else {
-            stopLossBreachLimit = rangeLimits.stopLossLimit ;
-            takeProfitBreachLimit = rangeLimits.takeProfitLimit;       
-        }
+        double legLastPrice = 0;    
 
         if (tickObj.firstSymbolLastPrice > 0) {
             if (tickObj.lastPriceUpdateTime > 0 ) {
@@ -629,15 +566,15 @@ public class SingleLegExit implements Runnable {
             rangeLimits.updatedtime = tickObj.lastPriceUpdateTime;
 
             if ( legDef.qty > 0 ) {
-                if ( legLastPrice <= stopLossBreachLimit ) {
+                if ( legLastPrice <= rangeLimits.stopLossLimit ) {
                     if (debugFlag) {
-                        System.out.println(legObj.symbol + " : " + "Breached Stop Loss Limit on positive Quantity. legLastPrice : " + legLastPrice + " stopLossBreachLimit :" + stopLossBreachLimit);
+                        System.out.println(legObj.symbol + " : " + "Breached Stop Loss Limit on positive Quantity. legLastPrice : " + legLastPrice + " stopLossBreachLimit :" + rangeLimits.stopLossLimit);
                     }
                     rangeLimits.stopLossLimitBreached = true;
                     rangeLimits.deviation = - 99;               
-                } else if ( legLastPrice >= takeProfitBreachLimit ) {
+                } else if ( legLastPrice > rangeLimits.takeProfitLimit ) {
                     if (debugFlag) {
-                        System.out.println(legObj.symbol + " : " + "Breached Take Profit Limit on positive Quantity. legLastPrice : " + legLastPrice + " takeProfitBreachLimit :" + takeProfitBreachLimit);
+                        System.out.println(legObj.symbol + " : " + "Breached Take Profit Limit on positive Quantity. legLastPrice : " + legLastPrice + " takeProfitBreachLimit :" + rangeLimits.takeProfitLimit);
                     }                
                     rangeLimits.takeProfitLimitBreached = true;
                     rangeLimits.deviation = 199;
@@ -645,15 +582,15 @@ public class SingleLegExit implements Runnable {
                     rangeLimits.deviation = (int) (100 * (legLastPrice - rangeLimits.stopLossLimit) / (rangeLimits.takeProfitLimit - rangeLimits.stopLossLimit));
                 }            
             } else if ( legDef.qty < 0 ) {
-                if ( legLastPrice >= stopLossBreachLimit ) {
+                if ( legLastPrice > rangeLimits.stopLossLimit ) {
                     if (debugFlag) {
-                        System.out.println(legObj.symbol + " : " + "Breached Stop Loss Limit on negative Quantity. legLastPrice : " + legLastPrice + " stopLossBreachLimit :" + stopLossBreachLimit);
+                        System.out.println(legObj.symbol + " : " + "Breached Stop Loss Limit on negative Quantity. legLastPrice : " + legLastPrice + " stopLossBreachLimit :" + rangeLimits.stopLossLimit);
                     }
                     rangeLimits.stopLossLimitBreached = true;
                     rangeLimits.deviation = - 99;               
-                } else if ( legLastPrice <= takeProfitBreachLimit ) {
+                } else if ( legLastPrice < rangeLimits.takeProfitLimit ) {
                     if (debugFlag) {
-                        System.out.println(legObj.symbol + " : " + "Breached Take Profit Limit on positive Quantity. legLastPrice : " + legLastPrice + " stopLossBreachLimit :" + takeProfitBreachLimit);
+                        System.out.println(legObj.symbol + " : " + "Breached Take Profit Limit on positive Quantity. legLastPrice : " + legLastPrice + " stopLossBreachLimit :" + rangeLimits.takeProfitLimit);
                     }                                
                     rangeLimits.takeProfitLimitBreached = true;
                     rangeLimits.deviation = 199;
@@ -664,8 +601,7 @@ public class SingleLegExit implements Runnable {
                 if (debugFlag) {
                     System.out.println(legObj.symbol + " : " + "Zero Quantity. Inside Calculate Breach - Which is Error Condition");
                 }            
-            }
-            
+            }            
         }
 
     } // End of calculateBreach    
@@ -685,98 +621,16 @@ public class SingleLegExit implements Runnable {
     
     void takeActionIfLimitsBreached(MyLegObj legDef, MyRangeActionObj rangeLimit){
 
-        int action = -1;
-        
         if ((rangeLimit.stopLossLimitBreached) || (rangeLimit.takeProfitLimitBreached)) {
             updateActionTakenStatus(rangeLimit,"Initiated");
-            action = rangeLimit.limitBreachAction2Take;
-        }
-        if (action > 0) {
-            // action is integer of form 1xxxxxx where each x could be a number 0 to 9
-            // each non zero means corresponding action to be taken. 0 means no action.
-            // Action code is following. If Number is 1hgfedcba then 
-            // a == 0 do nothing. a == 1 square off
-            // b == 0 do nothing. b == 1 send notification through Email
-            // c == 0 do nothing. c >= 1  lower breach - square off  
-            // c >= 1. upper breach - move both breach limits by % of 2*c i.e. simulate trailing stop loss
-            // d == 0 do nothing. d >= 1  lower breach - square off  
-            // d >= 1. upper breach - move both breach limits by % of 5*d i.e. simulate trailing stop loss
-            // e == 0 do nothing. e >= 1  lower breach - square off  
-            // e >= 1. upper breach - move both breach limits by % of 10*e i.e. simulate trailing stop loss
-            // f == 0 do nothing. f >= 1  lower breach - square off  
-            // f >= 1. upper breach OR deviation more than 75 - move both breach limits by % of 5*f i.e. simulate trailing stop loss                
-            // g == 0 do nothing. g >= 1  lower breach - square off  
-            // g >= 1. upper breach OR deviation more than 75 - move both breach limits by % of 10*f i.e. simulate trailing stop loss                            
-            
-            if ((action % 10) > 0) {
-                // a is non zero. Square off the pair
+            if (rangeLimit.stopLossLimitBreached) {
                 squareOffLegPosition(legDef);
-                updateActionTakenStatus(rangeLimit,"SquaredOff");
-            } 
-            action /= 10; // Strip off the action's last digit
-            if ( (action % 10) > 0) {
-                // b is non zero. Send notification through email
-                //To implement onNotify(pairDef, rangeLimit);
-                updateActionTakenStatus(rangeLimit,"None");                
-            } 
-            action /= 10; // Strip off the action's last digit
-            if ( (action % 10) > 0) {
-                // c is non zero
-                if (rangeLimit.stopLossLimitBreached) {
-                    squareOffLegPosition(legDef);
-                    updateActionTakenStatus(rangeLimit,"SquaredOff");                    
-                } else if (rangeLimit.takeProfitLimitBreached) {
-                    updateBreachLimits(rangeLimit, 2 * (action % 10) );
-                    updateActionTakenStatus(rangeLimit,"None");                    
-                }
-            } 
-            action /= 10; // Strip off the action's last digit
-            if ( (action % 10) > 0) {
-                // d is non zero
-                if (rangeLimit.stopLossLimitBreached) {
-                    squareOffLegPosition(legDef);
-                    updateActionTakenStatus(rangeLimit,"SquaredOff");                    
-                } else if (rangeLimit.takeProfitLimitBreached) {
-                    updateBreachLimits(rangeLimit, 5 * (action % 10) );
-                    updateActionTakenStatus(rangeLimit,"None");
-                }
-            } 
-            action /= 10; // Strip off the action's last digit
-            if ( (action % 10) > 0) {
-                // e is non zero
-                if (rangeLimit.stopLossLimitBreached) {
-                    squareOffLegPosition(legDef);
-                    updateActionTakenStatus(rangeLimit,"SquaredOff");                                        
-                } else if (rangeLimit.takeProfitLimitBreached) {
-                    updateBreachLimits(rangeLimit, 10 * (action % 10) );
-                    rangeLimit.limitBreachAction2Take += 1000000; // Increase the limit for next round
-                    updateActionTakenStatus(rangeLimit,"None");                    
-                }
-            }         
-            action /= 10; // Strip off the action's last digit
-            if ( (action % 10) > 0) {
-                // f is non zero
-                if (rangeLimit.stopLossLimitBreached) {
-                    squareOffLegPosition(legDef);
-                    updateActionTakenStatus(rangeLimit,"SquaredOff");                                        
-                } else if ((rangeLimit.takeProfitLimitBreached) || (rangeLimit.deviation >= 75)) {
-                    updateBreachLimits(rangeLimit, 5 * (action % 10) );
-                    updateActionTakenStatus(rangeLimit,"None");                    
-                }
-            }                     
-            action /= 10; // Strip off the action's last digit
-            if ( (action % 10) > 0) {
-                // g is non zero
-                if (rangeLimit.stopLossLimitBreached) {
-                    squareOffLegPosition(legDef);
-                    updateActionTakenStatus(rangeLimit,"SquaredOff");                                        
-                } else if ((rangeLimit.takeProfitLimitBreached) || (rangeLimit.deviation >= 75)) {
-                    updateBreachLimits(rangeLimit, 10 * (action % 10) );
-                    updateActionTakenStatus(rangeLimit,"None");                    
-                }
-            }                 
-        }
-            
+                updateActionTakenStatus(rangeLimit,"SquaredOff");                    
+            } else if (rangeLimit.takeProfitLimitBreached) {
+                squareOffLegPosition(legDef);
+                updateActionTakenStatus(rangeLimit,"SquaredOff");                        
+            }
+        }            
     } // End of takeActionIfLimitsBreached   
 
     int getOrderStatusArrayIndex(int orderId) {   
@@ -987,145 +841,7 @@ public class SingleLegExit implements Runnable {
             jedis.hset(openPositionsQueueKeyName, Integer.toString(slotNumber),myTradingObject.getCompleteTradingObjectString());
             jedisPool.returnResource(jedis);                        
         }        
-    }    
-    
-    void updateBreachLimits(MyRangeActionObj rangeLimit, int factor) {
-
-        // Reduce the gap between stoploss and takeprofit limit to given % of current gap - default is 30%
-        updateBreachLimitsForStopLossByFactor(rangeLimit, percentReductionInGapBetweenStopLossAndTakeProfit);      
-        // update the takeprofit limit
-        updateBreachLimitsForTakeProfitByFactor(rangeLimit, factor);
-
-        if (exchangeTimeZone.equals(TimeZone.getTimeZone("Asia/Calcutta"))) {
-            if (Math.abs(rangeLimit.takeProfitLimit - rangeLimit.stopLossLimit) < 500) {      
-                updateBreachLimitsForTakeProfitByAmount(rangeLimit, minimumStopLossDistance + minimumTakeProfitDistance);
-            }
-        } else if (exchangeTimeZone.equals(TimeZone.getTimeZone("America/New_York"))) {
-            if (Math.abs(rangeLimit.takeProfitLimit - rangeLimit.stopLossLimit) < 10) {      
-                updateBreachLimitsForTakeProfitByAmount(rangeLimit, minimumStopLossDistance + minimumTakeProfitDistance);
-            }
-        }        
-
-        updatePositionStatus(rangeLimit);
-        
-    }   // End of updateBreachLimits
-
-    void updateBreachLimitsForTakeProfitByFactor(MyRangeActionObj rangeLimit, int factor) {
-
-        if (debugFlag) {
-            System.out.println(String.format("%1$tY%1$tm%1$td:%1$tH:%1$tM:%1$tS ",Calendar.getInstance(exchangeTimeZone)) + legObj.symbol + " : " + "updating rangelimit for legId :" + rangeLimit.pairId + " : by factor :" + factor + " for take Profit. Current Take Profit Limit :" + rangeLimit.takeProfitLimit);
-        }  
-        
-        if (legObj.qty > 0) {
-            double incrementAmt = (rangeLimit.takeProfitLimit - rangeLimit.stopLossLimit) * factor / 100;
-            rangeLimit.takeProfitLimit += incrementAmt;            
-        } else if (legObj.qty < 0) {
-            double decrementAmt = (rangeLimit.stopLossLimit - rangeLimit.takeProfitLimit) * factor / 100;
-            rangeLimit.takeProfitLimit -= decrementAmt;                        
-        }
-
-        if (tickObj.lastPriceUpdateTime > 0 ) {
-            double legLastPrice = tickObj.comboLastPrice;
-            if (Math.abs(rangeLimit.takeProfitLimit - legLastPrice) < minimumTakeProfitDistance) {      
-                if (legObj.qty > 0) {
-                    rangeLimit.takeProfitLimit = legLastPrice + minimumTakeProfitDistance;            
-                } else if (legObj.qty < 0) {
-                    rangeLimit.takeProfitLimit = legLastPrice - minimumTakeProfitDistance;
-                }
-            }
-        }
-
-        if (debugFlag) {
-            System.out.println(String.format("%1$tY%1$tm%1$td:%1$tH:%1$tM:%1$tS ",Calendar.getInstance(exchangeTimeZone)) + legObj.symbol + " : " + "updated rangelimit for legId :" + rangeLimit.pairId + " : by factor :" + factor + " for take Profit. Now Take Profit Limit :" + rangeLimit.takeProfitLimit);
-        }  
-
-        updatePositionStatus(rangeLimit);
-        
-    }   // End of updateBreachLimitsForTakeProfitByFactor    
-
-    void updateBreachLimitsForStopLossByFactor(MyRangeActionObj rangeLimit, int factor) {
-
-        if (debugFlag) {
-            System.out.println(String.format("%1$tY%1$tm%1$td:%1$tH:%1$tM:%1$tS ",Calendar.getInstance(exchangeTimeZone)) + legObj.symbol + " : " + "updating rangelimit for legId :" + rangeLimit.pairId + " : by factor :" + factor + " for Stop Loss. Current Stop Loss Limit :" + rangeLimit.stopLossLimit);
-        }  
-
-        if (legObj.qty > 0) {
-            double incrementAmt = (rangeLimit.takeProfitLimit - rangeLimit.stopLossLimit) * factor / 100;
-            rangeLimit.stopLossLimit += incrementAmt; 
-        } else if (legObj.qty < 0) {
-            double decrementAmt = (rangeLimit.stopLossLimit - rangeLimit.takeProfitLimit) * factor / 100;
-            rangeLimit.stopLossLimit -= decrementAmt; 
-        }
-
-        if (tickObj.lastPriceUpdateTime > 0 ) {
-            double legLastPrice = tickObj.comboLastPrice;
-            if (Math.abs(rangeLimit.stopLossLimit - legLastPrice) < minimumStopLossDistance) {      
-                if (legObj.qty > 0) {
-                    rangeLimit.stopLossLimit = legLastPrice - minimumStopLossDistance;            
-                } else if (legObj.qty < 0) {
-                    rangeLimit.stopLossLimit = legLastPrice + minimumStopLossDistance;
-                }
-            }
-        }
-
-        if (debugFlag) {
-            System.out.println(String.format("%1$tY%1$tm%1$td:%1$tH:%1$tM:%1$tS ",Calendar.getInstance(exchangeTimeZone)) + legObj.symbol + " : " + "updated rangelimit for legId :" + rangeLimit.pairId + " : by factor :" + factor + " for Stop Loss. Now Stop Loss Limit :" + rangeLimit.stopLossLimit);
-        }  
-        
-        updatePositionStatus(rangeLimit);
-        
-    }   // End of updateBreachLimitsForStopLossByFactor    
-    
-    void updateBreachLimitsForTakeProfitByAmount(MyRangeActionObj rangeLimit, double Amount) {
-
-        if (debugFlag) {
-            System.out.println(String.format("%1$tY%1$tm%1$td:%1$tH:%1$tM:%1$tS ",Calendar.getInstance(exchangeTimeZone)) + legObj.symbol + " : " + "updating rangelimit for legId :" + rangeLimit.pairId + " : by Amount :" + Amount + " for take Profit. Current Take Profit Limit :" + rangeLimit.takeProfitLimit);
-        }  
-
-        if (legObj.qty > 0) {
-            rangeLimit.takeProfitLimit += Amount;            
-        } else if (legObj.qty < 0) {
-            rangeLimit.takeProfitLimit -= Amount;                        
-        }
-
-        if (tickObj.lastPriceUpdateTime > 0 ) {
-            double legLastPrice = tickObj.comboLastPrice;
-            if (Math.abs(rangeLimit.takeProfitLimit - legLastPrice) < minimumTakeProfitDistance) {      
-                if (legObj.qty > 0) {
-                    rangeLimit.takeProfitLimit = legLastPrice + minimumTakeProfitDistance;            
-                } else if (legObj.qty < 0) {
-                    rangeLimit.takeProfitLimit = legLastPrice - minimumTakeProfitDistance;
-                }
-            }
-        }
-
-        if (debugFlag) {
-            System.out.println(String.format("%1$tY%1$tm%1$td:%1$tH:%1$tM:%1$tS ",Calendar.getInstance(exchangeTimeZone)) + legObj.symbol + " : " + "updated rangelimit for legId :" + rangeLimit.pairId + " : by Amount :" + Amount + " for take Profit. Now Take Profit Limit :" + rangeLimit.takeProfitLimit);            
-        }  
-
-        updatePositionStatus(rangeLimit);
-        
-    }   // End of updateBreachLimitsForTakeProfitByAmount  
-
-    void updateBreachLimitsForStopLossByAmount(MyRangeActionObj rangeLimit, double Amount) {
-
-        if (debugFlag) {
-            System.out.println(String.format("%1$tY%1$tm%1$td:%1$tH:%1$tM:%1$tS ",Calendar.getInstance(exchangeTimeZone)) + legObj.symbol + " : " + "updating rangelimit for legId :" + rangeLimit.pairId + " : by Amount :" + Amount + " for Stop Loss. Current Stop Loss Limit :" + rangeLimit.stopLossLimit);
-        }  
-
-        if (legObj.qty > 0) {
-            rangeLimit.stopLossLimit += Amount; 
-        } else if (legObj.qty < 0) {
-            rangeLimit.stopLossLimit -= Amount; 
-        }
-
-        if (debugFlag) {
-            System.out.println(String.format("%1$tY%1$tm%1$td:%1$tH:%1$tM:%1$tS ",Calendar.getInstance(exchangeTimeZone)) + legObj.symbol + " : " + "updated rangelimit for legId :" + rangeLimit.pairId + " : by Amount :" + Amount + " for Stop Loss. Now Stop Loss Limit :" + rangeLimit.stopLossLimit);
-        }  
-        
-        updatePositionStatus(rangeLimit);
-        
-    }   // End of updateBreachLimitsForStopLossByAmount 
+    }        
     
     void updateActionTakenStatus(MyRangeActionObj rangeLimit, String newStatus) {
 
@@ -1137,85 +853,6 @@ public class SingleLegExit implements Runnable {
             rangeLimit.stopLossBreachActionStatus = newStatus;
             rangeLimit.takeProfitBreachActionStatus = newStatus; 
         }
-
     }   // End of updateActionTakenStatus
-    
-    void updateBreachLimitsBasedOnHoldingPeriod(Calendar currentTime, MyRangeActionObj rangeLimit, double Amount){
-
-        if (Integer.parseInt(String.format("%1$tM%1$tS",currentTime)) % 1000 == 0 ) {
-            
-            minimumStopLossDistance = Double.parseDouble(myUtils.getHashMapValueFromRedis(jedisPool,redisConfigurationKey, "MINSTOPLOSSAMOUNT",false));
-            minimumTakeProfitDistance = Double.parseDouble(myUtils.getHashMapValueFromRedis(jedisPool,redisConfigurationKey, "MINTAKEPROFITAMOUNT",false));        
-            percentReductionInGapBetweenStopLossAndTakeProfit = Integer.parseInt(myUtils.getHashMapValueFromRedis(jedisPool,redisConfigurationKey, "PERCENTGAPREDUCTIONWITHEVERYTAKEPROFITHIT",false)); 
-            thresholdPercentGapForDeemedTakeProfitLimitHit = Integer.parseInt(myUtils.getHashMapValueFromRedis(jedisPool,redisConfigurationKey, "THRESHOLDPERCENTFORDEEMEDTAKEPROFITLIMITHIT",false)); 
-            thresholdPercentGapForDeemedStopLossLimitHit = Integer.parseInt(myUtils.getHashMapValueFromRedis(jedisPool,redisConfigurationKey, "THRESHOLDPERCENTFORDEEMEDSTOPLOSSLIMITHIT",false)); 
-            rangeLimitObj.thresholdPercentTakeProfit = thresholdPercentGapForDeemedTakeProfitLimitHit;            
-            rangeLimitObj.thresholdPercentStopLoss = thresholdPercentGapForDeemedStopLossLimitHit;            
-            
-            // Check number of Bars Elapsed. Based on Elapsed numebr of Bars, set upperlimit and lowerlimit
-         
-            int elapsedBars = myUtils.calcElapsedBars(jedisPool, legObj.legEntryTimeStamp,String.format("%1$tY%1$tm%1$td%1$tH%1$tM%1$tS",currentTime), exchangeTimeZone, exchangeHolidayListKeyName, false);
-            if (debugFlag) {
-                System.out.println(String.format("%1$tY%1$tm%1$td:%1$tH:%1$tM:%1$tS ",Calendar.getInstance(exchangeTimeZone)) + legObj.symbol + " : " + "Elapsed Bars :" + elapsedBars);                        
-            }   
-            
-            if (elapsedBars > 0) {
-                if (strategyExitType.equalsIgnoreCase("continuoustrailingstoploss")) {
-                    updateBreachLimitsForStopLossByFactor(rangeLimitObj, 1);
-                }
-                if ((elapsedBars >= legObj.halfLife) && (elapsedBars < (holdingPeriodFactorOfHalfLife * legObj.halfLife))) {
-                    if (strategyExitType.equalsIgnoreCase("halflifebased")) {
-                        // if it is halflifebased then do nothing
-                    } else if (strategyExitType.equalsIgnoreCase("trailingstoploss")) {
-                        // Ensure that StopLoss Limit and Take Profit Limit are beyond entry Price +/- sigma as applicable
-                        // stopLossLimit has to be atleast entryPrice - sigma for buy position and at most entryPrice + sigma for short positions
-                        if ( legObj.qty > 0 ) {
-                            double minStopLossLimit = legObj.legEntryPrice - (incrementPerBar * legObj.halfLife) ; 
-                            if (debugFlag) {
-                                System.out.println(String.format("%1$tY%1$tm%1$td:%1$tH:%1$tM:%1$tS ",Calendar.getInstance(exchangeTimeZone)) + legObj.symbol + " : " + "Elapsed Bar Stop Loss :" + minStopLossLimit + " Existing :" + rangeLimit.stopLossLimit);                        
-                            }                             
-                            if (rangeLimit.stopLossLimit < minStopLossLimit) {                    
-                                rangeLimit.stopLossLimit = minStopLossLimit;
-                            }
-                        } else if ( legObj.qty < 0 ) {
-                            double maxStopLossLimit = legObj.legEntryPrice + (incrementPerBar * legObj.halfLife) ; 
-                            if (debugFlag) {
-                                System.out.println(String.format("%1$tY%1$tm%1$td:%1$tH:%1$tM:%1$tS ",Calendar.getInstance(exchangeTimeZone)) + legObj.symbol + " : " + "Elapsed Bar Stop Loss :" + maxStopLossLimit + " Existing :" + rangeLimit.stopLossLimit);                        
-                            }                                  
-                            if (rangeLimit.stopLossLimit > maxStopLossLimit) {                    
-                                rangeLimit.stopLossLimit = maxStopLossLimit;
-                            }
-                        }
-                    }
-                } else if (elapsedBars >= (holdingPeriodFactorOfHalfLife * legObj.halfLife)) {
-                    if (strategyExitType.equalsIgnoreCase("halflifebased")) {
-                        // if it is halflifebased then make the Stoploss and take profit same so that it exits immediately
-                        updateBreachLimitsForStopLossByFactor(rangeLimit, 99);                        
-                    } else if (strategyExitType.equalsIgnoreCase("trailingstoploss")) {
-                        // Ensure that StopLoss Limit is beyond entry Price +/- 0.5*sigma and TakeProfit Limit is beyond entry Price +/- 1.5*sigma as applicable
-                        // stopLossLimit has to be entryPrice - 0.5*sigma + elapsedBars*incrementPerBar for buy position and entryPrice + 0.5*sigma - elapsedBars*incrementPerBar  for short positions 
-                        if ( legObj.qty > 0 ) {
-                            double minStopLossLimit = legObj.legEntryPrice - (0.5 * incrementPerBar * legObj.halfLife) + (incrementPerBar * elapsedBars); 
-                            if (debugFlag) {
-                                System.out.println(String.format("%1$tY%1$tm%1$td:%1$tH:%1$tM:%1$tS ",Calendar.getInstance(exchangeTimeZone)) + legObj.symbol + " : " + "Elapsed Bar Stop Loss :" + minStopLossLimit + " Existing :" + rangeLimit.stopLossLimit);                        
-                            }                               
-                            if (rangeLimit.stopLossLimit < minStopLossLimit) {                    
-                                rangeLimit.stopLossLimit = minStopLossLimit;
-                            }
-                        } else if ( legObj.qty < 0 ) {
-                            double maxStopLossLimit = legObj.legEntryPrice + (0.5 * incrementPerBar * legObj.halfLife) -  (incrementPerBar * elapsedBars); 
-                            if (debugFlag) {
-                                System.out.println(String.format("%1$tY%1$tm%1$td:%1$tH:%1$tM:%1$tS ",Calendar.getInstance(exchangeTimeZone)) + legObj.symbol + " : " + "Elapsed Bar Stop Loss :" + maxStopLossLimit + " Existing :" + rangeLimit.stopLossLimit);                        
-                            }   
-                            if (rangeLimit.stopLossLimit > maxStopLossLimit) {                                                 
-                                rangeLimit.stopLossLimit = maxStopLossLimit;
-                            }
-                        }
-                    }
-                }
-                
-            }
-        }
-    }
-    
+        
 }

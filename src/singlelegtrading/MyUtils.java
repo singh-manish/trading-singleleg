@@ -26,18 +26,97 @@ SOFTWARE.
 
 package singlelegtrading;
 
-import java.text.ParseException;
-import java.text.SimpleDateFormat;
-import java.util.Calendar;
-import java.util.TimeZone;
-import java.util.List;
-import java.util.logging.Level;
-import java.util.logging.Logger;
+import java.text.*;
+import java.util.*;
+import java.util.logging.*;
 import redis.clients.jedis.*;
 
 /**
  * @author Manish Kumar Singh
  */
+
+class MyExchangeClass {
+    private TimeZone exchangeTimeZone;
+    private int exchangeStartTimeHHMM, exchangeStartTimeHHMMSS, exchangeCloseTimeHHMM,exchangeCloseTimeHHMMSS;
+    private int programStartTimeHHMM, programStartTimeHHMMSS, programCloseTimeHHMM,programCloseTimeHHMMSS;
+    private String exchangeName, exchangeCurrency;
+
+    public MyExchangeClass (TimeZone exTZ) {
+        this.exchangeTimeZone = exTZ;
+        if (exTZ.equals(TimeZone.getTimeZone("Asia/Calcutta"))) {
+            this.exchangeStartTimeHHMM = 915;
+            this.exchangeStartTimeHHMMSS = 91500;
+            this.exchangeCloseTimeHHMM = 1530;
+            this.exchangeCloseTimeHHMMSS = 153000;
+            this.programStartTimeHHMM = 900;
+            this.programStartTimeHHMMSS = 90000;
+            this.programCloseTimeHHMM = 1535;
+            this.programCloseTimeHHMMSS = 153500;
+            this.exchangeName = "NSE";
+            this.exchangeCurrency = "INR";
+        } else if (exTZ.equals(TimeZone.getTimeZone("America/New_York"))) {         
+            this.exchangeStartTimeHHMM = 930;
+            this.exchangeStartTimeHHMMSS = 93000;
+            this.exchangeCloseTimeHHMM = 1600;
+            this.exchangeCloseTimeHHMMSS = 160000;
+            this.programStartTimeHHMM = 915;
+            this.programStartTimeHHMMSS = 91500;
+            this.programCloseTimeHHMM = 1605;
+            this.programCloseTimeHHMMSS = 160500;
+            this.exchangeName = "SMART";
+            this.exchangeCurrency = "USD";
+        }
+    }
+
+    public MyExchangeClass (String exchangeCurrency) {
+        if (exchangeCurrency.equalsIgnoreCase("inr")) {
+            this.exchangeTimeZone = TimeZone.getTimeZone("Asia/Calcutta");            
+            this.exchangeStartTimeHHMM = 915;
+            this.exchangeStartTimeHHMMSS = 91500;
+            this.exchangeCloseTimeHHMM = 1530;
+            this.exchangeCloseTimeHHMMSS = 153000;
+            this.programStartTimeHHMM = 900;
+            this.programStartTimeHHMMSS = 90000;
+            this.programCloseTimeHHMM = 1535;
+            this.programCloseTimeHHMMSS = 153500;
+            this.exchangeName = "NSE";
+            this.exchangeCurrency = "INR";
+        } else if (exchangeCurrency.equalsIgnoreCase("usd")) {
+            this.exchangeTimeZone = TimeZone.getTimeZone("America/New_York");          
+            this.exchangeStartTimeHHMM = 930;
+            this.exchangeStartTimeHHMMSS = 93000;
+            this.exchangeCloseTimeHHMM = 1600;
+            this.exchangeCloseTimeHHMMSS = 160000;
+            this.programStartTimeHHMM = 915;
+            this.programStartTimeHHMMSS = 91500;
+            this.programCloseTimeHHMM = 1605;
+            this.programCloseTimeHHMMSS = 160500;
+            this.exchangeName = "SMART";
+            this.exchangeCurrency = "USD";
+        }
+    }    
+
+    public TimeZone getExchangeTimeZone() { return this.exchangeTimeZone; }
+    public int getExchangeStartTimeHHMM() { return this.exchangeStartTimeHHMM; }
+    public String getStringExchangeStartTimeHHMM() { return String.format("%04d", this.exchangeStartTimeHHMM); }    
+    public int getExchangeStartTimeHHMMSS() { return this.exchangeStartTimeHHMMSS; } 
+    public String getStringExchangeStartTimeHHMMSS() { return String.format("%06d", this.exchangeStartTimeHHMMSS); }      
+    public int getExchangeCloseTimeHHMM() { return this.exchangeCloseTimeHHMM; }
+    public String getStringExchangeCloseTimeHHMM() { return String.format("%04d", this.exchangeCloseTimeHHMM); }    
+    public int getExchangeCloseTimeHHMMSS() { return this.exchangeCloseTimeHHMMSS; } 
+    public String getStringExchangeCloseTimeHHMMSS() { return String.format("%06d", this.exchangeCloseTimeHHMMSS); }     
+    public int getProgramStartTimeHHMM() { return this.programStartTimeHHMM; }
+    public String getStringProgramStartTimeHHMM() { return String.format("%04d", this.programStartTimeHHMM); }    
+    public int getProgramStartTimeHHMMSS() { return this.programStartTimeHHMMSS; } 
+    public String getStringProgramStartTimeHHMMSS() { return String.format("%06d", this.programStartTimeHHMMSS); }     
+    public int getProgramCloseTimeHHMM() { return this.programCloseTimeHHMM; }
+    public String getStringProgramCloseTimeHHMM() { return String.format("%04d", this.programCloseTimeHHMM); }    
+    public int getProgramCloseTimeHHMMSS() { return this.programCloseTimeHHMMSS; }  
+    public String getStringProgramCloseTimeHHMMSS() { return String.format("%04d", this.programCloseTimeHHMMSS); }    
+    public String getExchangeName() { return this.exchangeName; } 
+    public String getExchangeCurrency() { return this.exchangeCurrency; }    
+     
+}
 
 public class MyUtils {
     
