@@ -26,8 +26,12 @@ SOFTWARE.
 package singlelegtrading;
 
 import com.ib.client.*;
-import java.util.Calendar;
-import java.util.TimeZone;
+import java.text.ParseException;
+import java.text.SimpleDateFormat;
+import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 import redis.clients.jedis.*;
 
 /**
@@ -53,28 +57,11 @@ public class IBInteraction implements EWrapper {
     
     private Object lockOrderPlacement = new Object();
 
-    // Define class to store last updated prices, and time of it
-    public class MyTickObjClass {
-        double symbolLastPrice, symbolClosePrice, symbolBidPrice, symbolAskPrice;
-        long lastPriceUpdateTime,closePriceUpdateTime,bidPriceUpdateTime,askPriceUpdateTime;
-        boolean subscriptionStatus;
-    }
-    public MyTickObjClass[] myTickDetails;
+    public ConcurrentHashMap<Integer, MyTickObjClass> myTickDetails = new ConcurrentHashMap <Integer, MyTickObjClass>();
 
-    // Define class to store last updated prices, and time of it
-    public class MyBidAskPriceObjClass {
-        double symbolBidPrice, symbolAskPrice;
-        long bidPriceUpdateTime,askPriceUpdateTime;
-    }
-    public MyBidAskPriceObjClass[] myBidAskPriceDetails;
+    public ConcurrentHashMap<Integer, MyBidAskPriceObjClass> myBidAskPriceDetails = new ConcurrentHashMap<Integer, MyBidAskPriceObjClass>();
     
-    // Define class to get Order id
-    public class MyOrderStatusObjClass {
-        double filledPrice;
-        int remainingQuantity, orderIdentification, filledQuantity;
-        long updateTime;        
-    }
-    public MyOrderStatusObjClass[] myOrderStatusDetails;     
+    public ConcurrentHashMap<Integer, MyOrderStatusObjClass> myOrderStatusDetails = new ConcurrentHashMap<Integer, MyOrderStatusObjClass>();     
     
     private int debugLevel = 0;
     
@@ -100,39 +87,6 @@ public class IBInteraction implements EWrapper {
             defaultOffsetForRelativeOrder = 0.05;
         } else if (myExchangeObj.getExchangeTimeZone().equals(TimeZone.getTimeZone("America/New_York"))) {
             defaultOffsetForRelativeOrder = 0.01;            
-        }
-        
-        myTickDetails = new MyTickObjClass[29];                
-        for (int index = 0; index < myTickDetails.length; index++ ) {         
-            myTickDetails[index] = new MyTickObjClass();
-            myTickDetails[index].symbolLastPrice = 0.0;
-            myTickDetails[index].symbolClosePrice = 0.0; 
-            myTickDetails[index].symbolBidPrice = 0.0;
-            myTickDetails[index].symbolAskPrice = 0.0;                         
-            myTickDetails[index].lastPriceUpdateTime = -1;
-            myTickDetails[index].closePriceUpdateTime = -1;
-            myTickDetails[index].bidPriceUpdateTime = -1;
-            myTickDetails[index].askPriceUpdateTime = -1;  
-            myTickDetails[index].subscriptionStatus = false;                
-        }
-
-        myBidAskPriceDetails = new MyBidAskPriceObjClass[49];                
-        for (int index = 0; index < myBidAskPriceDetails.length; index++ ) {         
-            myBidAskPriceDetails[index] = new MyBidAskPriceObjClass();
-            myBidAskPriceDetails[index].symbolBidPrice = 0.0;
-            myBidAskPriceDetails[index].symbolAskPrice = 0.0;            
-            myBidAskPriceDetails[index].bidPriceUpdateTime = -1;
-            myBidAskPriceDetails[index].askPriceUpdateTime = -1;                
-        }
-        
-        myOrderStatusDetails = new MyOrderStatusObjClass[49];                
-        for (int index = 0; index < myOrderStatusDetails.length; index++ ) {         
-            myOrderStatusDetails[index] = new MyOrderStatusObjClass();
-            myOrderStatusDetails[index].orderIdentification = 0;
-            myOrderStatusDetails[index].filledPrice = 0.0;
-            myOrderStatusDetails[index].filledQuantity = 0;            
-            myOrderStatusDetails[index].remainingQuantity = -1;            
-            myOrderStatusDetails[index].updateTime = -1;              
         }         
         
     }
@@ -188,7 +142,7 @@ public class IBInteraction implements EWrapper {
 
     } // End of waitForConnection
 
-    void getBidAskPriceForStk(int requestID, String symbol) {
+    void getBidAskPriceForStk(int requestId, String symbol) {
 
         Contract myContract = new Contract();   
         myContract.m_symbol = symbol;
@@ -196,10 +150,10 @@ public class IBInteraction implements EWrapper {
         myContract.m_exchange = myExchangeObj.getExchangeName();
         myContract.m_currency = myExchangeObj.getExchangeCurrency();   
 
-        myBidAskPriceDetails[requestID - IBTICKARRAYINDEXOFFSET].symbolBidPrice = 0.0;
-        myBidAskPriceDetails[requestID - IBTICKARRAYINDEXOFFSET].symbolAskPrice = 0.0;            
+        myBidAskPriceDetails.put(requestId - IBTICKARRAYINDEXOFFSET, new MyBidAskPriceObjClass(requestId - IBTICKARRAYINDEXOFFSET));
+        myBidAskPriceDetails.get(requestId - IBTICKARRAYINDEXOFFSET).setRequestId(requestId - IBTICKARRAYINDEXOFFSET);
         
-        ibClient.reqMktData(requestID, myContract, "", true);            
+        ibClient.reqMktData(requestId, myContract, "", true);            
         
     } // End of getBidAskPriceForStk    
     
@@ -209,28 +163,37 @@ public class IBInteraction implements EWrapper {
 
     } // End of stopGettingBidAskPriceForStk()    
     
-    void requestStkMktDataSubscription(int requestID, String symbol) {
+    int requestStkMktDataSubscription(int requestId, String symbol) {
 
-        Contract myContract = new Contract();   
-        myContract.m_symbol = symbol;
-        myContract.m_secType = "STK";
-        myContract.m_exchange = myExchangeObj.getExchangeName();
-        myContract.m_currency = myExchangeObj.getExchangeCurrency();   
+        int returnRequestId = 0;
+        // check if existing subscription exists for given symbol
+        // if exists then return corresponding requestId.
+        // if subscription does not exist then request one and return true
+        boolean subscriptionExists = false;
+        for (int key : myTickDetails.keySet()) {
+            if ((myTickDetails.get(key).getContractDet().m_symbol.equalsIgnoreCase(symbol)) &&
+                (myTickDetails.get(key).getContractDet().m_secType.equals("STK")) &&
+                (myTickDetails.get(key).getSubscriptionStatus())
+                ) {
+                subscriptionExists = true;
+                returnRequestId = key;                
+            }
+        }
 
-        myTickDetails[requestID].symbolLastPrice = 0.0;
-        myTickDetails[requestID].symbolClosePrice = 0.0; 
-        myTickDetails[requestID].symbolBidPrice = 0.0;
-        myTickDetails[requestID].symbolAskPrice = 0.0;                         
-        myTickDetails[requestID].lastPriceUpdateTime = -1;
-        myTickDetails[requestID].closePriceUpdateTime = -1;
-        myTickDetails[requestID].bidPriceUpdateTime = -1;
-        myTickDetails[requestID].askPriceUpdateTime = -1;  
-        myTickDetails[requestID].subscriptionStatus = true;         
-        ibClient.reqMktData(requestID, myContract, "", false);            
-        
+        if (!(subscriptionExists)) {
+            // subscription does not exist so request one
+            myTickDetails.put(requestId, new MyTickObjClass(requestId));
+            myTickDetails.get(requestId).setRequestId(requestId);
+            //(String symbol, String currency, String securityType, String exchange, String expiry)            
+            myTickDetails.get(requestId).setContractDet(symbol, myExchangeObj.getExchangeCurrency(), "STK", myExchangeObj.getExchangeName());
+            myTickDetails.get(requestId).setSubscriptionStatus(true);
+            ibClient.reqMktData(requestId, myTickDetails.get(symbol).getContractDet(), "", false);            
+            returnRequestId = requestId;
+        }               
+        return(returnRequestId);
     } // End of requestStkMktDataSubscription    
 
-    void getBidAskPriceForFut(int requestID, String symbol, String expiry) {
+    void getBidAskPriceForFut(int requestId, String symbol, String expiry) {
 
         Contract myContract = new Contract();   
         myContract.m_symbol = symbol;
@@ -239,10 +202,10 @@ public class IBInteraction implements EWrapper {
         myContract.m_currency = myExchangeObj.getExchangeCurrency();   
         myContract.m_expiry = expiry;         
 
-        myBidAskPriceDetails[requestID - IBTICKARRAYINDEXOFFSET].symbolBidPrice = 0.0;
-        myBidAskPriceDetails[requestID - IBTICKARRAYINDEXOFFSET].symbolAskPrice = 0.0;            
+        myBidAskPriceDetails.put(requestId - IBTICKARRAYINDEXOFFSET, new MyBidAskPriceObjClass(requestId - IBTICKARRAYINDEXOFFSET));
+        myBidAskPriceDetails.get(requestId - IBTICKARRAYINDEXOFFSET).setRequestId(requestId - IBTICKARRAYINDEXOFFSET);
         
-        ibClient.reqMktData(requestID, myContract, "", true);            
+        ibClient.reqMktData(requestId, myContract, "", true);            
         
     } // End of getBidAskPriceForFut    
     
@@ -252,32 +215,41 @@ public class IBInteraction implements EWrapper {
 
     } // End of stopGettingBidAskPriceForFut()     
     
-    void requestFutMktDataSubscription(int requestID, String symbol, String expiry) {
+    int requestFutMktDataSubscription(int requestId, String symbol, String expiry) {
 
-        Contract myContract = new Contract();   
-        myContract.m_symbol = symbol;
-        myContract.m_secType = "FUT";
-        myContract.m_exchange = myExchangeObj.getExchangeName();
-        myContract.m_currency = myExchangeObj.getExchangeCurrency();   
-        myContract.m_expiry = expiry;         
+        int returnRequestId = 0;        
+        // check if existing subscription exists for given symbol
+        // if exists then return false.
+        // if subscription does not exist then request one and return true
+        boolean subscriptionExists = false;
+        for (int key : myTickDetails.keySet()) {
+            if ((myTickDetails.get(key).getContractDet().m_symbol.equalsIgnoreCase(symbol)) &&
+                (myTickDetails.get(key).getContractDet().m_secType.equals("FUT")) &&
+                (myTickDetails.get(key).getContractDet().m_expiry.equals(expiry)) &&                    
+                (myTickDetails.get(key).getSubscriptionStatus())
+                ) {
+                subscriptionExists = true;
+                returnRequestId = key;                
+            }
+        }
 
-        myTickDetails[requestID].symbolLastPrice = 0.0;
-        myTickDetails[requestID].symbolClosePrice = 0.0; 
-        myTickDetails[requestID].symbolBidPrice = 0.0;
-        myTickDetails[requestID].symbolAskPrice = 0.0;                         
-        myTickDetails[requestID].lastPriceUpdateTime = -1;
-        myTickDetails[requestID].closePriceUpdateTime = -1;
-        myTickDetails[requestID].bidPriceUpdateTime = -1;
-        myTickDetails[requestID].askPriceUpdateTime = -1;  
-        myTickDetails[requestID].subscriptionStatus = true;        
-        ibClient.reqMktData(requestID, myContract, "", false);            
-        
+        if (!(subscriptionExists)) {
+            // subscription does not exist so request one
+            myTickDetails.put(requestId, new MyTickObjClass(requestId));
+            myTickDetails.get(requestId).setRequestId(requestId);
+            //(String symbol, String currency, String securityType, String exchange, String expiry)            
+            myTickDetails.get(requestId).setContractDet(symbol, myExchangeObj.getExchangeCurrency(), "FUT", myExchangeObj.getExchangeName(), expiry);
+            myTickDetails.get(requestId).setSubscriptionStatus(true);
+            ibClient.reqMktData(requestId, myTickDetails.get(symbol).getContractDet(), "", false);            
+            returnRequestId = requestId;
+        }               
+        return(returnRequestId);
     } // End of requestFutMktDataSubscription    
 
-    void cancelMktDataSubscription(int requestID) {        
+    void cancelMktDataSubscription(int requestId) {        
 
-        myTickDetails[requestID].subscriptionStatus = false;
-        ibClient.cancelMktData(requestID);            
+        ibClient.cancelMktData(requestId);
+        myTickDetails.get(requestId).setSubscriptionStatus(false);            
 
     } // End of onCancelMktData() 
 
@@ -325,7 +297,6 @@ public class IBInteraction implements EWrapper {
         myOrder.m_transmit = true; // STP order i.e. transmit immediately
         synchronized(lockOrderPlacement) {
             ibOrderId = myUtils.getNextOrderID(jedisPool, orderIDField, debugFlag);
-            getNextOrderStatusArrayIndex(ibOrderId);
             ibClient.placeOrder(ibOrderId, myContract, myOrder);
             if (debugFlag) {
                 System.out.println(String.format("%1$tY%1$tm%1$td:%1$tH:%1$tM:%1$tS ",Calendar.getInstance(myExchangeObj.getExchangeTimeZone())) + "Placed Relative Order for " + symbol +" for "+ mktAction + " type STK " + " order ID " + ibOrderId + " limit " + limitPrice + " offsetAmt " + offsetAmount);
@@ -390,7 +361,6 @@ public class IBInteraction implements EWrapper {
         myOrder.m_transmit = true; // STP order i.e. transmit immediately
         synchronized(lockOrderPlacement) {
             ibOrderId = myUtils.getNextOrderID(jedisPool, orderIDField, debugFlag);
-            getNextOrderStatusArrayIndex(ibOrderId);
             ibClient.placeOrder(ibOrderId, myContract, myOrder);
             if (debugFlag) {
                 System.out.println(String.format("%1$tY%1$tm%1$td:%1$tH:%1$tM:%1$tS ",Calendar.getInstance(myExchangeObj.getExchangeTimeZone())) + "Placed Relative Order for " + symbol +" for "+ mktAction + " type FUT " + " expiry "+ expiry + " order ID " + ibOrderId + " limit " + limitPrice + " offsetAmt " + offsetAmount);
@@ -421,7 +391,6 @@ public class IBInteraction implements EWrapper {
         myOrder.m_transmit = true; // STP order i.e. transmit immediately
         synchronized(lockOrderPlacement) {
             ibOrderId = myUtils.getNextOrderID(jedisPool, orderIDField, debugFlag);
-            getNextOrderStatusArrayIndex(ibOrderId);
             ibClient.placeOrder(ibOrderId, myContract, myOrder);
             if (debugFlag) {
                 System.out.println(String.format("%1$tY%1$tm%1$td:%1$tH:%1$tM:%1$tS ",Calendar.getInstance(myExchangeObj.getExchangeTimeZone())) + "Placed Market Order for " + symbol +" for "+ mktAction + " type FUT " + " expiry "+ expiry + " order ID " + ibOrderId);
@@ -431,26 +400,6 @@ public class IBInteraction implements EWrapper {
         return(ibOrderId);        
     } // placeFutOrderAtMarket
 
-    private boolean getNextOrderStatusArrayIndex(int orderId) {   
-    
-        boolean found = false;
-        int returnIndex = 0;
-        while ((returnIndex < myOrderStatusDetails.length) && (!found)) {
-            if (myOrderStatusDetails[returnIndex].orderIdentification == 0) {
-                found = true;
-                myOrderStatusDetails[returnIndex].orderIdentification = orderId;
-                myOrderStatusDetails[returnIndex].filledPrice = 0.0;
-                myOrderStatusDetails[returnIndex].filledQuantity = 0;            
-                myOrderStatusDetails[returnIndex].remainingQuantity = -1;            
-                myOrderStatusDetails[returnIndex].updateTime = -1;              
-            } else {
-                returnIndex++;                
-            }
-        }
-
-        return(found);
-    }    
-    
     // overridden functions to receive data from IB interface / TWS
     @Override
     public void historicalData(int reqId, String date, double open, double high, double low,
@@ -461,69 +410,64 @@ public class IBInteraction implements EWrapper {
     @Override
     public void tickPrice(int tickerId, int field, double price, int canAutoExecute) {
         
-        if (tickerId > IBTICKARRAYINDEXOFFSET) { 
-            if (field == 1) {
-                myBidAskPriceDetails[tickerId - IBTICKARRAYINDEXOFFSET].symbolBidPrice = price;                                    
+        if ( (tickerId > IBTICKARRAYINDEXOFFSET) && (myBidAskPriceDetails.containsKey(tickerId - IBTICKARRAYINDEXOFFSET)) ) { 
+            if ((field == TickType.BID) ) {
+                myBidAskPriceDetails.get(tickerId - IBTICKARRAYINDEXOFFSET).setSymbolBidPrice(price);
+                myBidAskPriceDetails.get(tickerId - IBTICKARRAYINDEXOFFSET).setBidPriceUpdateTime(System.currentTimeMillis());                
                 System.out.println("bidPrice " + price +" tickerId "+ tickerId + " Time " + String.format("%1$tY%1$tm%1$td%1$tH%1$tM%1$tS",Calendar.getInstance(myExchangeObj.getExchangeTimeZone())) );
             }
-            if (field == 2) {
-                myBidAskPriceDetails[tickerId - IBTICKARRAYINDEXOFFSET].symbolAskPrice = price;                                    
+            if (field == TickType.ASK) {
+                myBidAskPriceDetails.get(tickerId - IBTICKARRAYINDEXOFFSET).setSymbolAskPrice(price);
+                myBidAskPriceDetails.get(tickerId - IBTICKARRAYINDEXOFFSET).setAskPriceUpdateTime(System.currentTimeMillis());                
                 System.out.println("askPrice " + price +" tickerId "+ tickerId + " Time " + String.format("%1$tY%1$tm%1$td%1$tH%1$tM%1$tS",Calendar.getInstance(myExchangeObj.getExchangeTimeZone())) );
             }
         } else {
-            for (int index = 0; index < myTickDetails.length; index++ ) {         
-                if (myTickDetails[index].subscriptionStatus) {
-                    double closePrice = 0.0;
-                    if (field == 9) {
-                        if (tickerId == index) {
-                            closePrice = price;
-                        }
-                        if (closePrice > 0) {
-                            myTickDetails[index].closePriceUpdateTime = System.currentTimeMillis();            
-                            myTickDetails[index].symbolClosePrice = closePrice;                                    
-                        }
-                    }                    
-                    double lastPrice = 0.0;
-                    if (field == 4) {
-                        myTickDetails[index].lastPriceUpdateTime = System.currentTimeMillis();            
-                        if (tickerId == index) {
-                            lastPrice = price;
-                        }
-                        if (lastPrice > 0) {
-                            myTickDetails[index].lastPriceUpdateTime = System.currentTimeMillis();            
-                            myTickDetails[index].symbolLastPrice = lastPrice;                                    
-                        }                    
+            if (myTickDetails.containsKey(tickerId)) {
+                if ((myTickDetails.get(tickerId).subscriptionStatus) && (price > 0)) {
+                    if (field == TickType.CLOSE) {
+                        myTickDetails.get(tickerId).setClosePriceUpdateTime(System.currentTimeMillis());
+                        myTickDetails.get(tickerId).setSymbolClosePrice(price);
                     }
-                    double bidPrice = 0.0;
-                    if (field == 1) {
-                        myTickDetails[index].bidPriceUpdateTime = System.currentTimeMillis();            
-                        if (tickerId == index) {
-                            bidPrice = price;
-                        }
-                        if (bidPrice > 0) {
-                            myTickDetails[index].bidPriceUpdateTime = System.currentTimeMillis();            
-                            myTickDetails[index].symbolBidPrice = bidPrice;                                    
-                        }                    
-                    }       
-                    double askPrice = 0.0;
-                    if (field == 2) {
-                        myTickDetails[index].askPriceUpdateTime = System.currentTimeMillis();            
-                        if (tickerId == index) {
-                            askPrice = price;
-                        }
-                        if (askPrice > 0) {
-                            myTickDetails[index].askPriceUpdateTime = System.currentTimeMillis();            
-                            myTickDetails[index].symbolAskPrice = askPrice;                                    
-                        }                    
-                    }                      
+                    if (field == TickType.LAST) {
+                        myTickDetails.get(tickerId).setLastPriceUpdateTime(System.currentTimeMillis());            
+                        myTickDetails.get(tickerId).setSymbolLastPrice(price);
+                    }
+                    if (field == TickType.BID) {
+                        myTickDetails.get(tickerId).setBidPriceUpdateTime(System.currentTimeMillis());            
+                        myTickDetails.get(tickerId).setSymbolBidPrice(price);
+                    }
+                    if (field == TickType.ASK) {
+                        myTickDetails.get(tickerId).setAskPriceUpdateTime(System.currentTimeMillis());            
+                        myTickDetails.get(tickerId).setSymbolAskPrice(price);
+                    }
                 }            
             }                                        
         }        
+        
     } // End of tickPrice(...)
 
     @Override
     public void tickSize(int tickerId, int field, int size) {
-             
+
+        if (myTickDetails.containsKey(tickerId)) {
+            if (myTickDetails.get(tickerId).subscriptionStatus) {
+                if (field == TickType.VOLUME) {
+                    myTickDetails.get(tickerId).setLastVolumeUpdateTime(System.currentTimeMillis());
+                    myTickDetails.get(tickerId).setSymbolLastVolume(size);
+                }
+            }
+        }
+        if ( (tickerId > IBTICKARRAYINDEXOFFSET) && (myBidAskPriceDetails.containsKey(tickerId - IBTICKARRAYINDEXOFFSET)) ) { 
+            if ((field == TickType.BID_SIZE) ) {
+                myBidAskPriceDetails.get(tickerId - IBTICKARRAYINDEXOFFSET).setSymbolBidVolume(size);
+                System.out.println("bidSize " + size +" tickerId "+ tickerId + " Time " + String.format("%1$tY%1$tm%1$td%1$tH%1$tM%1$tS",Calendar.getInstance(myExchangeObj.getExchangeTimeZone())) );
+            }
+            if (field == TickType.ASK_SIZE) {
+                myBidAskPriceDetails.get(tickerId - IBTICKARRAYINDEXOFFSET).setSymbolAskVolume(size);
+                System.out.println("askSize " + size +" tickerId "+ tickerId + " Time " + String.format("%1$tY%1$tm%1$td%1$tH%1$tM%1$tS",Calendar.getInstance(myExchangeObj.getExchangeTimeZone())) );
+            }
+        }
+
     } // End of tickSize(...)
 
     
@@ -569,18 +513,19 @@ public class IBInteraction implements EWrapper {
             double avgFillPrice, int permId, int parentId, double lastFillPrice,
             int clientId, String whyHeld) {
 
-        for (int index = 0; index < myOrderStatusDetails.length; index++ ) { 
-            if ((myOrderStatusDetails[index].orderIdentification > 0) &&
-            (orderId == myOrderStatusDetails[index].orderIdentification)) {
-                myOrderStatusDetails[index].filledQuantity = filled;
-                myOrderStatusDetails[index].remainingQuantity = remaining;
-                myOrderStatusDetails[index].filledPrice= avgFillPrice;
-                myOrderStatusDetails[index].updateTime = System.currentTimeMillis();                    
-                if (debugLevel > 4) {
-                    System.out.println(String.format("%1$tY%1$tm%1$td:%1$tH:%1$tM:%1$tS ",Calendar.getInstance(myExchangeObj.getExchangeTimeZone())) + "OrderId " + orderId +" status "+ status + " filled qty "+ filled + " remaining qty " + remaining + " average fill price " + avgFillPrice + " last filled price " + lastFillPrice);            
-                }
-            }                         
-        }             
+        if (!(myOrderStatusDetails.containsKey(orderId))) {
+            myOrderStatusDetails.put(orderId, new MyOrderStatusObjClass(orderId));
+        }
+        myOrderStatusDetails.get(orderId).setOrderId(orderId);
+        myOrderStatusDetails.get(orderId).setFilledPrice(avgFillPrice);
+        myOrderStatusDetails.get(orderId).setFilledQuantity(filled);
+        myOrderStatusDetails.get(orderId).setRemainingQuantity(remaining); 
+        myOrderStatusDetails.get(orderId).setUpdateTime(System.currentTimeMillis()); 
+        
+        if (debugLevel > 4) {
+            System.out.println(String.format("%1$tY%1$tm%1$td:%1$tH:%1$tM:%1$tS ",Calendar.getInstance(myExchangeObj.getExchangeTimeZone())) + "OrderId " + orderId +" status "+ status + " filled qty "+ filled + " remaining qty " + remaining + " average fill price " + avgFillPrice + " last filled price " + lastFillPrice);            
+        }        
+
     }
 
     @Override
@@ -614,16 +559,21 @@ public class IBInteraction implements EWrapper {
 
         //System.out.println("reqId :" + orderId +" symbol :"+ contract.m_symbol + " expiry :" + contract.m_expiry + " execTime :" + execution.m_time + " avgPrice :" + execution.m_avgPrice + " execOrderId :" + execution.m_orderId + " price :" + execution.m_price + " qty :" + execution.m_cumQty + " numShares :" + execution.m_shares + " orderRef :" + execution.m_orderRef );                        
 
-        for (int index = 0; index < myOrderStatusDetails.length; index++ ) { 
-            if ((myOrderStatusDetails[index].orderIdentification > 0) &&
-                (myOrderStatusDetails[index].remainingQuantity != 0 ) &&
-                (execution.m_orderId == myOrderStatusDetails[index].orderIdentification)) {
-                    myOrderStatusDetails[index].filledQuantity = execution.m_cumQty;
-                    myOrderStatusDetails[index].remainingQuantity = 0;
-                    myOrderStatusDetails[index].filledPrice= execution.m_price;                    
-            }                         
-        }                     
-        
+        if (!(myOrderStatusDetails.containsKey(execution.m_orderId))) {
+            myOrderStatusDetails.put(execution.m_orderId, new MyOrderStatusObjClass(execution.m_orderId));
+            myOrderStatusDetails.get(execution.m_orderId).setUpdateTime(System.currentTimeMillis());         
+        }
+        myOrderStatusDetails.get(execution.m_orderId).setOrderId(orderId);
+        myOrderStatusDetails.get(execution.m_orderId).setFilledPrice(execution.m_price);
+        myOrderStatusDetails.get(execution.m_orderId).setFilledQuantity(execution.m_cumQty);
+        myOrderStatusDetails.get(execution.m_orderId).setRemainingQuantity(execution.m_cumQty - execution.m_shares);
+        try {
+            // Convert execution.m_time to long millisecond value yyyyMMdd-HH:mm:ss
+            Date tradeTime = new SimpleDateFormat("yyyyMMdd-HH:mm:ss").parse(execution.m_time);
+            myOrderStatusDetails.get(execution.m_orderId).setUpdateTime(tradeTime.getTime());              
+        } catch (ParseException ex) {
+            Logger.getLogger(IBInteraction.class.getName()).log(Level.SEVERE, null, ex);
+        }
     }
 
     @Override

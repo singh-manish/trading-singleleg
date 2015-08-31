@@ -32,6 +32,7 @@ package singlelegtrading;
 
 import redis.clients.jedis.*;
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 
 public class SingleLegTrading {
 
@@ -46,20 +47,11 @@ public class SingleLegTrading {
     private static String ibOrderIDKeyName;
     private static String exchangeHolidayListKeyName;
     
-    // Define class to store Manul Intervention Signals for each Open Position
-    public class MyManualInterventionClass {
-         int slotNumber;
-         String targetValue;
-         boolean squareOff, updateTakeProfit, updateStopLoss;
-    }
-    public MyManualInterventionClass[] myMIDetails;
-
-   private static final int MAXALLOWEDOPENSLOTS = 50;
-   
-   private static MyExchangeClass myExchangeObj;
+    public ConcurrentHashMap<String, MyManualInterventionClass> myMIDetails;
     
-   
-   SingleLegTrading(String redisIP, int redisPort, String redisConfigKey, String ibIP, int ibPort, int ibClientID, String exchangeCurrency, boolean debugIndicator){
+    private static MyExchangeClass myExchangeObj;
+       
+    SingleLegTrading(String redisIP, int redisPort, String redisConfigKey, String ibIP, int ibPort, int ibClientID, String exchangeCurrency, boolean debugIndicator){
         // Set Debug Flag 
         debugFlag = debugIndicator;
         // Create connection Pool for  Redis server. 
@@ -72,23 +64,13 @@ public class SingleLegTrading {
         redisConfigurationKey = redisConfigKey;
 
         myExchangeObj = new MyExchangeClass(exchangeCurrency);
-
         TimeZone.setDefault(myExchangeObj.getExchangeTimeZone());
         
         ibOrderIDKeyName = myUtils.getHashMapValueFromRedis(jedisPool,redisConfigurationKey, "ORDERIDFIELDKEYNAME",false);        
         exchangeHolidayListKeyName = myUtils.getHashMapValueFromRedis(jedisPool,redisConfigurationKey, "EXCHANGEHOLIDAYLISTKEYNAME",false);           
         ibInteractionClient = new IBInteraction(jedisPool, ibOrderIDKeyName, ibIP, ibPort, ibClientID, myExchangeObj);
         
-        myMIDetails = new MyManualInterventionClass[MAXALLOWEDOPENSLOTS];                
-        for (int index = 0; index < myMIDetails.length; index++ ) {         
-            myMIDetails[index] = new MyManualInterventionClass();
-            myMIDetails[index].slotNumber = 0;
-            myMIDetails[index].targetValue = "0"; 
-            myMIDetails[index].squareOff = false;
-            myMIDetails[index].updateTakeProfit = false;                         
-            myMIDetails[index].updateStopLoss = false;                
-        }
-        
+        myMIDetails = new ConcurrentHashMap<String, MyManualInterventionClass>();                        
    }
    
     /**

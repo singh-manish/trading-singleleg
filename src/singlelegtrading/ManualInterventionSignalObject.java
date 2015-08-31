@@ -71,6 +71,7 @@ public class ManualInterventionSignalObject {
                      1  - Square Off the trade / position at given slot number 
                      2  - Update trade level stop loss to given value 
                      3  - Update trade level take profit to given value
+                     4  - Stop Monitoring (useful for graceful exit)
     
         4  :  Target Value of parameter to be updated. 0 if not applicable (e.g. for square off action)        
     

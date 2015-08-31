@@ -29,6 +29,7 @@ import java.io.FileWriter;
 import java.io.IOException;
 import redis.clients.jedis.*;
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * @author Manish Kumar Singh
@@ -126,14 +127,15 @@ public class SingleLegExit implements Runnable {
     private double initialStopLoss = 6000.0;
     private double initialTakeProfit = 5000.0;
     private String fileNameForLimitsStatusUpdates;
+    private String miKey;
 
-    public singlelegtrading.SingleLegTrading.MyManualInterventionClass[] manualInterventionSignal;
+    private ConcurrentHashMap<String, MyManualInterventionClass> myMIDetails;
     
     public String exchangeHolidayListKeyName;
 
     private int IBTICKARRAYINDEXOFFSET = 50;
     
-  SingleLegExit(String name, JedisPool redisConnectionPool, IBInteraction ibIntClient, String redisConfigKey, TimeZone exTZ, int slotNum, singlelegtrading.SingleLegTrading.MyManualInterventionClass[] miSignal, boolean debugIndicator){
+  SingleLegExit(String name, JedisPool redisConnectionPool, IBInteraction ibIntClient, String redisConfigKey, TimeZone exTZ, int slotNum, ConcurrentHashMap<String, MyManualInterventionClass> miSignalMap, boolean debugIndicator){
 
         threadName = name;
         debugFlag = debugIndicator;
@@ -147,8 +149,9 @@ public class SingleLegExit implements Runnable {
         redisConfigurationKey = redisConfigKey; 
         exchangeTimeZone = exTZ;
         slotNumber = slotNum;
+        miKey = Integer.toString(slotNumber);
 
-        manualInterventionSignal = miSignal;
+        myMIDetails = miSignalMap;
 
         TimeZone.setDefault(exchangeTimeZone);
         
@@ -259,35 +262,34 @@ public class SingleLegExit implements Runnable {
                 }
                 terminate();
             }
+
+            if ((myMIDetails.get(miKey).getActionIndicator() == MyManualInterventionClass.STOPMONITORING) && (!quit)) {
+                terminate();
+            }            
             
-            if ((manualInterventionSignal[slotNumber].squareOff) && (!quit)){
+            if ((myMIDetails.get(miKey).getActionIndicator() == MyManualInterventionClass.SQUAREOFF) && (!quit)){
                 System.out.println("Exiting Leg Position : " + legObj.symbol + " as manual Intervention Signal to Square Off received");                            
                 squareOffLegPosition(legObj);
                 if (positionQty == 0) {
                     updatePositionStatusInQueues(String.format("%1$tY%1$tm%1$td%1$tH%1$tM%1$tS",timeNow));
                     terminate();
                 }
-                manualInterventionSignal[slotNumber].squareOff = false;
             }
 
-            if ((manualInterventionSignal[slotNumber].updateStopLoss) && (!quit)) {
+            if ((myMIDetails.get(miKey).getActionIndicator() == MyManualInterventionClass.UPDATESTOPLOSS) && (!quit)) {
                 double tempLimit;
                 try {
-                    tempLimit = Double.parseDouble(manualInterventionSignal[slotNumber].targetValue);
+                    tempLimit = Double.parseDouble(myMIDetails.get(miKey).getTargetValue());
                     rangeLimitObj.stopLossLimit = tempLimit;
-                } catch (Exception ex) {                    
-                }
-                manualInterventionSignal[slotNumber].updateStopLoss = false;
+                } catch (Exception ex) {}
             }
 
-            if ((manualInterventionSignal[slotNumber].updateTakeProfit) && (!quit)) {
+            if ((myMIDetails.get(miKey).getActionIndicator() == MyManualInterventionClass.UPDATETAKEPROFIT) && (!quit)) {
                 double tempLimit;
                 try {
-                    tempLimit = Double.parseDouble(manualInterventionSignal[slotNumber].targetValue);
+                    tempLimit = Double.parseDouble(myMIDetails.get(miKey).getTargetValue());
                     rangeLimitObj.takeProfitLimit = tempLimit;
-                } catch (Exception ex) {                    
-                }
-                manualInterventionSignal[slotNumber].updateTakeProfit = false;
+                } catch (Exception ex) {}
             }
             
             if (!quit) {            
@@ -529,12 +531,12 @@ public class SingleLegExit implements Runnable {
 
     void updateTickObj(){
 
-        tickObj.firstSymbolBidPrice = ibInteractionClient.myTickDetails[slotNumber].symbolBidPrice;
-        tickObj.firstSymbolAskPrice = ibInteractionClient.myTickDetails[slotNumber].symbolAskPrice;
-        tickObj.firstSymbolLastPrice = ibInteractionClient.myTickDetails[slotNumber].symbolLastPrice;
-        tickObj.firstSymbolClosePrice = ibInteractionClient.myTickDetails[slotNumber].symbolClosePrice;
-        tickObj.lastPriceUpdateTime = ibInteractionClient.myTickDetails[slotNumber].lastPriceUpdateTime;
-        tickObj.closePriceUpdateTime = ibInteractionClient.myTickDetails[slotNumber].closePriceUpdateTime;        
+        tickObj.firstSymbolBidPrice = ibInteractionClient.myTickDetails.get(slotNumber).getSymbolBidPrice();
+        tickObj.firstSymbolAskPrice = ibInteractionClient.myTickDetails.get(slotNumber).getSymbolAskPrice();
+        tickObj.firstSymbolLastPrice = ibInteractionClient.myTickDetails.get(slotNumber).getSymbolLastPrice();
+        tickObj.firstSymbolClosePrice = ibInteractionClient.myTickDetails.get(slotNumber).getSymbolClosePrice();
+        tickObj.lastPriceUpdateTime = ibInteractionClient.myTickDetails.get(slotNumber).getLastPriceUpdateTime();
+        tickObj.closePriceUpdateTime = ibInteractionClient.myTickDetails.get(slotNumber).getClosePriceUpdateTime();        
 
         if (tickObj.firstSymbolLastPrice > 0) {
             tickObj.comboLastPrice = tickObj.firstSymbolLastPrice * legObj.lotSize;            
@@ -633,33 +635,14 @@ public class SingleLegExit implements Runnable {
         }            
     } // End of takeActionIfLimitsBreached   
 
-    int getOrderStatusArrayIndex(int orderId) {   
-    
-        boolean found = false;
-        int returnIndex = 0;
-        while ((returnIndex < ibInteractionClient.myOrderStatusDetails.length) && (!found)) {
-            if (ibInteractionClient.myOrderStatusDetails[returnIndex].orderIdentification == orderId) {
-                found = true;
-            } else {
-                returnIndex++;                
-            }
-        }
-
-        if (!found) {
-            returnIndex = -1;
-        }
-
-        return(returnIndex);
-    }
-
-    boolean exitOrderCompletelyFilled(int legOrderStatusIndex, int maxWaitTime) {
+    boolean exitOrderCompletelyFilled(int orderId, int maxWaitTime) {
 
         ibInteractionClient.ibClient.reqOpenOrders();
         int timeOut = 0;
-        while ( (ibInteractionClient.myOrderStatusDetails[legOrderStatusIndex].remainingQuantity != 0) &&
+        while ( (ibInteractionClient.myOrderStatusDetails.get(orderId).getRemainingQuantity() != 0) &&
                 (timeOut < maxWaitTime)) {
             if (debugFlag) {
-                System.out.println(String.format("%1$tY%1$tm%1$td:%1$tH:%1$tM:%1$tS ",Calendar.getInstance(exchangeTimeZone)) + "Waiting for Order to be filled for  Order id "  +  ibInteractionClient.myOrderStatusDetails[legOrderStatusIndex].orderIdentification + " for " + timeOut + " seconds");
+                System.out.println(String.format("%1$tY%1$tm%1$td:%1$tH:%1$tM:%1$tS ",Calendar.getInstance(exchangeTimeZone)) + "Waiting for Order to be filled for  Order id "  +  ibInteractionClient.myOrderStatusDetails.get(orderId).getOrderId() + " for " + timeOut + " seconds");
             } 
             timeOut += 10;                
             myUtils.waitForNSeconds(5);
@@ -667,7 +650,7 @@ public class SingleLegExit implements Runnable {
             ibInteractionClient.ibClient.reqOpenOrders();
             myUtils.waitForNSeconds(5);
         }
-        if (ibInteractionClient.myOrderStatusDetails[legOrderStatusIndex].remainingQuantity == 0) {
+        if (ibInteractionClient.myOrderStatusDetails.get(orderId).getRemainingQuantity() == 0) {
             return(true);
         } else {
             return(false);
@@ -723,7 +706,7 @@ public class SingleLegExit implements Runnable {
                     ibInteractionClient.getBidAskPriceForFut(slotNumber + IBTICKARRAYINDEXOFFSET, legDef.symbol, legDef.futExpiry);
                 }  
                 legOrderId = placeConfiguredOrder(legDef.symbol, Math.abs(legDef.lotSize), legDef.futExpiry, "SELL");
-                bidAskDetails = legDef.symbol + "_" + ibInteractionClient.myBidAskPriceDetails[slotNumber].symbolBidPrice + "_" + ibInteractionClient.myBidAskPriceDetails[slotNumber].symbolAskPrice ;                
+                bidAskDetails = legDef.symbol + "_" + ibInteractionClient.myBidAskPriceDetails.get(slotNumber).getSymbolBidPrice() + "_" + ibInteractionClient.myBidAskPriceDetails.get(slotNumber).getSymbolAskPrice() ;                
             } else if (legDef.qty < 0){
                 // Leg was shorted at the the time of taking position. leg would be bought for squaring off
                 if (legDef.futExpiry.equalsIgnoreCase("000000")) {
@@ -734,55 +717,44 @@ public class SingleLegExit implements Runnable {
                     ibInteractionClient.getBidAskPriceForFut(slotNumber + IBTICKARRAYINDEXOFFSET, legDef.symbol, legDef.futExpiry);
                 }  
                 legOrderId = placeConfiguredOrder(legDef.symbol, Math.abs(legDef.lotSize), legDef.futExpiry, "BUY");
-                bidAskDetails = legDef.symbol + "_" + ibInteractionClient.myBidAskPriceDetails[slotNumber].symbolBidPrice + "_" + ibInteractionClient.myBidAskPriceDetails[slotNumber].symbolAskPrice ;                                
+                bidAskDetails = legDef.symbol + "_" + ibInteractionClient.myBidAskPriceDetails.get(slotNumber).getSymbolBidPrice() + "_" + ibInteractionClient.myBidAskPriceDetails.get(slotNumber).getSymbolAskPrice() ;                                
             }
 
             if (legOrderId > 0)  {
                 setOpenPositionSlotOrderStatus("exitordersenttoexchange");                
-                System.out.println(String.format("%1$tY%1$tm%1$td:%1$tH:%1$tM:%1$tS ",Calendar.getInstance(exchangeTimeZone)) + "Square Off Order for " + legDef.symbol + " initiated with orderid as " + legOrderId );            
+                System.out.println(String.format("%1$tY%1$tm%1$td:%1$tH:%1$tM:%1$tS ",Calendar.getInstance(exchangeTimeZone)) + "Square Off Order for " + legDef.symbol + " initiated with orderid as " + legOrderId );  
 
-                // Get index of Order Array of ibinteraction client to get back order status
-                int indexOrderSymbol = getOrderStatusArrayIndex(legOrderId);
-
-                if (indexOrderSymbol < 0) {
-                    // Try once more after 20 seconds
-                    myUtils.waitForNSeconds(20);
-                    indexOrderSymbol = getOrderStatusArrayIndex(legOrderId);
-                }  
                 // Wait for orders to be completely filled            
-                if ((indexOrderSymbol >= 0) && exitOrderCompletelyFilled(indexOrderSymbol, 750)) {                  
+                if  (exitOrderCompletelyFilled(legOrderId, 750)) {                  
                     setOpenPositionSlotOrderStatus("exitorderfilled");                                                        
-                    System.out.println(String.format("%1$tY%1$tm%1$td:%1$tH:%1$tM:%1$tS ",Calendar.getInstance(exchangeTimeZone)) + "Exit Order filled for Order id " +  legOrderId + " at avg filled price " + ibInteractionClient.myOrderStatusDetails[indexOrderSymbol].filledPrice);
+                    System.out.println(String.format("%1$tY%1$tm%1$td:%1$tH:%1$tM:%1$tS ",Calendar.getInstance(exchangeTimeZone)) + "Exit Order filled for Order id " +  legOrderId + " at avg filled price " + ibInteractionClient.myOrderStatusDetails.get(legOrderId).getFilledPrice());
                     if (legDef.qty > 0) {
                         // Leg was bought at the the time of taking position. Leg would be sold for squaring off
-                        legFilledPrice = ibInteractionClient.myOrderStatusDetails[indexOrderSymbol].filledPrice * legObj.lotSize;                
-                        bidAskDetails = legDef.symbol + "_" + ibInteractionClient.myBidAskPriceDetails[slotNumber].symbolBidPrice + "_" + ibInteractionClient.myBidAskPriceDetails[slotNumber].symbolAskPrice ;                
-                        bidAskDetails = bidAskDetails + "__" + legOrderId + "_" + legDef.symbol + "_" + ibInteractionClient.myOrderStatusDetails[indexOrderSymbol].filledPrice;                        
+                        legFilledPrice = ibInteractionClient.myOrderStatusDetails.get(legOrderId).getFilledPrice() * legObj.lotSize;                
+                        bidAskDetails = legDef.symbol + "_" + ibInteractionClient.myBidAskPriceDetails.get(slotNumber).getSymbolBidPrice() + "_" + ibInteractionClient.myBidAskPriceDetails.get(slotNumber).getSymbolAskPrice() ;                
+                        bidAskDetails = bidAskDetails + "__" + legOrderId + "_" + legDef.symbol + "_" + ibInteractionClient.myOrderStatusDetails.get(legOrderId).getFilledPrice();                        
                     } else if (legDef.qty < 0){
                         // Leg was shorted at the the time of taking position. leg would be bought for squaring off
-                        legFilledPrice =  ibInteractionClient.myOrderStatusDetails[indexOrderSymbol].filledPrice * legObj.lotSize ;                
-                        bidAskDetails = legDef.symbol + "_" + ibInteractionClient.myBidAskPriceDetails[slotNumber].symbolBidPrice + "_" + ibInteractionClient.myBidAskPriceDetails[slotNumber].symbolAskPrice ;                                
-                        bidAskDetails = bidAskDetails + "__" + legOrderId + "_" + legDef.symbol + "_" + ibInteractionClient.myOrderStatusDetails[indexOrderSymbol].filledPrice  ;                        
+                        legFilledPrice =  ibInteractionClient.myOrderStatusDetails.get(legOrderId).getFilledPrice() * legObj.lotSize ;                
+                        bidAskDetails = legDef.symbol + "_" + ibInteractionClient.myBidAskPriceDetails.get(slotNumber).getSymbolBidPrice() + "_" + ibInteractionClient.myBidAskPriceDetails.get(slotNumber).getSymbolAskPrice() ;                                
+                        bidAskDetails = bidAskDetails + "__" + legOrderId + "_" + legDef.symbol + "_" + ibInteractionClient.myOrderStatusDetails.get(legOrderId).getFilledPrice();                        
                     }
-                } else if (indexOrderSymbol >= 0) {                  
+                } else {                  
                     ibInteractionClient.requestExecutionDetailsHistorical(legOrderId,1);
                     myUtils.waitForNSeconds(30);
-                    System.out.println(String.format("%1$tY%1$tm%1$td:%1$tH:%1$tM:%1$tS ",Calendar.getInstance(exchangeTimeZone)) + "Exit Order filled for Order id " +  legOrderId + " at avg filled price " + ibInteractionClient.myOrderStatusDetails[indexOrderSymbol].filledPrice);
+                    System.out.println(String.format("%1$tY%1$tm%1$td:%1$tH:%1$tM:%1$tS ",Calendar.getInstance(exchangeTimeZone)) + "Exit Order filled for Order id " +  legOrderId + " at avg filled price " + ibInteractionClient.myOrderStatusDetails.get(legOrderId).getFilledPrice());
                     if (legDef.qty > 0) {
                         // Leg was bought at the the time of taking position. Leg would be sold for squaring off
-                        legFilledPrice = ibInteractionClient.myOrderStatusDetails[indexOrderSymbol].filledPrice * legObj.lotSize;                
-                        bidAskDetails = legDef.symbol + "_" + ibInteractionClient.myBidAskPriceDetails[slotNumber].symbolBidPrice + "_" + ibInteractionClient.myBidAskPriceDetails[slotNumber].symbolAskPrice ;                
-                        bidAskDetails = bidAskDetails + "__" + legOrderId + "_" + legDef.symbol + "_" + ibInteractionClient.myOrderStatusDetails[indexOrderSymbol].filledPrice;                        
+                        legFilledPrice = ibInteractionClient.myOrderStatusDetails.get(legOrderId).getFilledPrice() * legObj.lotSize;                
+                        bidAskDetails = legDef.symbol + "_" + ibInteractionClient.myBidAskPriceDetails.get(slotNumber).getSymbolBidPrice() + "_" + ibInteractionClient.myBidAskPriceDetails.get(slotNumber).getSymbolAskPrice() ;                
+                        bidAskDetails = bidAskDetails + "__" + legOrderId + "_" + legDef.symbol + "_" + ibInteractionClient.myOrderStatusDetails.get(legOrderId).getFilledPrice();                        
                     } else if (legDef.qty < 0){
                         // Leg was shorted at the the time of taking position. leg would be bought for squaring off
-                        legFilledPrice =  ibInteractionClient.myOrderStatusDetails[indexOrderSymbol].filledPrice * legObj.lotSize ;                
-                        bidAskDetails = legDef.symbol + "_" + ibInteractionClient.myBidAskPriceDetails[slotNumber].symbolBidPrice + "_" + ibInteractionClient.myBidAskPriceDetails[slotNumber].symbolAskPrice ;                                
-                        bidAskDetails = bidAskDetails + "__" + legOrderId + "_" + legDef.symbol + "_" + ibInteractionClient.myOrderStatusDetails[indexOrderSymbol].filledPrice  ;                        
+                        legFilledPrice =  ibInteractionClient.myOrderStatusDetails.get(legOrderId).getFilledPrice() * legObj.lotSize ;                
+                        bidAskDetails = legDef.symbol + "_" + ibInteractionClient.myBidAskPriceDetails.get(slotNumber).getSymbolBidPrice() + "_" + ibInteractionClient.myBidAskPriceDetails.get(slotNumber).getSymbolAskPrice() ;                                
+                        bidAskDetails = bidAskDetails + "__" + legOrderId + "_" + legDef.symbol + "_" + ibInteractionClient.myOrderStatusDetails.get(legOrderId).getFilledPrice()  ;                        
                     }                    
                     System.out.println(String.format("%1$tY%1$tm%1$td:%1$tH:%1$tM:%1$tS ",Calendar.getInstance(exchangeTimeZone)) + "Please update manually as exit Order initiated but did not receive Confirmation for Orders filling for Order id " +  legOrderId);                
-                } else {                  
-                    myUtils.waitForNSeconds(30);
-                    System.out.println(String.format("%1$tY%1$tm%1$td:%1$tH:%1$tM:%1$tS ",Calendar.getInstance(exchangeTimeZone)) + "Please update manually as exit Order initiated but Orders Array Index could not be found for Order id " +  legOrderId);   
                 }
             }
             //ibInteractionClient.stopGettingBidAskPriceForFut(slotNumber + IBTICKARRAYINDEXOFFSET);            

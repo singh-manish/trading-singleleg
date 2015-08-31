@@ -26,16 +26,19 @@ SOFTWARE.
 
 package singlelegtrading;
 
+import com.ib.client.Contract;
 import java.text.*;
 import java.util.*;
 import java.util.logging.*;
 import redis.clients.jedis.*;
+import redis.clients.jedis.exceptions.JedisException;
 
 /**
  * @author Manish Kumar Singh
  */
 
 class MyExchangeClass {
+    
     private TimeZone exchangeTimeZone;
     private int exchangeStartTimeHHMM, exchangeStartTimeHHMMSS, exchangeCloseTimeHHMM,exchangeCloseTimeHHMMSS;
     private int programStartTimeHHMM, programStartTimeHHMMSS, programCloseTimeHHMM,programCloseTimeHHMMSS;
@@ -116,6 +119,161 @@ class MyExchangeClass {
     public String getExchangeName() { return this.exchangeName; } 
     public String getExchangeCurrency() { return this.exchangeCurrency; }    
      
+}
+
+// Define class to store last updated prices, and time of it
+class MyTickObjClass {
+    
+    int requestId, symbolLastVolume;
+    double symbolLastPrice, symbolClosePrice, symbolBidPrice, symbolAskPrice;
+    long lastVolumeUpdateTime,lastPriceUpdateTime,closePriceUpdateTime,bidPriceUpdateTime,askPriceUpdateTime;
+    boolean subscriptionStatus;
+    private Contract contractDet = new Contract();    
+    public MyTickObjClass(int requestId) {
+        this.requestId = requestId;
+        this.symbolLastVolume = 0;
+        this.symbolLastPrice = 0.0;
+        this.symbolClosePrice = 0.0;
+        this.symbolBidPrice = 0.0;
+        this.symbolAskPrice = 0.0;
+        this.lastVolumeUpdateTime = -1;        
+        this.lastPriceUpdateTime = -1;
+        this.closePriceUpdateTime = -1;
+        this.bidPriceUpdateTime = -1;
+        this.askPriceUpdateTime = -1;
+        this.subscriptionStatus = false;        
+    }
+    
+    public int getRequestId() { return this.requestId; }
+    public int getSymbolLastVolume() { return this.symbolLastVolume; }    
+    public double getSymbolLastPrice() { return this.symbolLastPrice; }
+    public double getSymbolClosePrice() { return this.symbolClosePrice; }
+    public double getSymbolBidPrice() { return this.symbolBidPrice; }
+    public double getSymbolAskPrice() { return this.symbolAskPrice; }
+    public long getLastVolumeUpdateTime() { return this.lastVolumeUpdateTime; }    
+    public long getLastPriceUpdateTime() { return this.lastPriceUpdateTime; }
+    public long getClosePriceUpdateTime() { return this.closePriceUpdateTime; }
+    public long getBidPriceUpdateTime() { return this.bidPriceUpdateTime; }
+    public long getAskPriceUpdateTime() { return this.askPriceUpdateTime; }
+    public boolean getSubscriptionStatus() { return this.subscriptionStatus; }    
+    public Contract getContractDet() { return this.contractDet; }  
+    public String getSecurityType() { return this.contractDet.m_secType; }      
+    
+    public void setRequestId(int requestId) { this.requestId = requestId; }
+    public void setSymbolLastVolume(int volume) { this.symbolLastVolume = volume; }    
+    public void setSymbolLastPrice(double price) { this.symbolLastPrice = price; }
+    public void setSymbolClosePrice(double price) { this.symbolClosePrice = price; }
+    public void setSymbolBidPrice(double price) { this.symbolBidPrice = price; }
+    public void setSymbolAskPrice(double price) { this.symbolAskPrice = price; }
+    public void setLastVolumeUpdateTime(long time) { this.lastVolumeUpdateTime = time; }    
+    public void setLastPriceUpdateTime(long time) { this.lastPriceUpdateTime = time; }
+    public void setClosePriceUpdateTime(long time) { this.closePriceUpdateTime = time; }
+    public void setBidPriceUpdateTime(long time) { this.bidPriceUpdateTime = time; }
+    public void setAskPriceUpdateTime(long time) { this.askPriceUpdateTime = time; }
+    public void setSubscriptionStatus(boolean subscriptionStatus) { this.subscriptionStatus = subscriptionStatus; }
+    // constructor for contract type FUT
+    public void setContractDet(String symbol, String currency, String securityType, String exchange, String expiry) { 
+        this.contractDet.m_symbol = symbol; 
+        this.contractDet.m_currency = currency;
+        this.contractDet.m_secType = securityType;
+        this.contractDet.m_exchange = exchange;
+        this.contractDet.m_expiry = expiry;        
+    }
+    // Constructor for contract Type STK
+    public void setContractDet(String symbol, String currency, String securityType, String exchange) { 
+        this.contractDet.m_symbol = symbol; 
+        this.contractDet.m_currency = currency;
+        this.contractDet.m_secType = securityType;
+        this.contractDet.m_exchange = exchange;
+    }    
+    
+}
+
+// Define class to store snapshot of Bid Ask price
+class MyBidAskPriceObjClass {
+    
+    int requestId, symbolBidVolume, symbolAskVolume;
+    double symbolBidPrice, symbolAskPrice;
+    long bidPriceUpdateTime,askPriceUpdateTime;
+
+    public MyBidAskPriceObjClass(int requestId) {
+        this.requestId = requestId;
+        this.symbolBidVolume = 0;
+        this.symbolAskVolume = 0;
+        this.symbolBidPrice = 0.0;
+        this.symbolAskPrice = 0.0;
+        this.bidPriceUpdateTime = -1;
+        this.askPriceUpdateTime = -1;
+    }
+    
+    public int getRequestId() { return this.requestId; }
+    public int getSymbolBidVolume() { return this.symbolBidVolume; }    
+    public int getSymbolAskVolume() { return this.symbolAskVolume; }        
+    public double getSymbolBidPrice() { return this.symbolBidPrice; }
+    public double getSymbolAskPrice() { return this.symbolAskPrice; }
+    public long getBidPriceUpdateTime() { return this.bidPriceUpdateTime; }
+    public long getAskPriceUpdateTime() { return this.askPriceUpdateTime; }
+    
+    public void setRequestId(int requestId) { this.requestId = requestId; }
+    public void setSymbolBidVolume(int volume) { this.symbolBidVolume = volume; }    
+    public void setSymbolAskVolume(int volume) { this.symbolAskVolume = volume; }    
+    public void setSymbolBidPrice(double price) { this.symbolBidPrice = price; }
+    public void setSymbolAskPrice(double price) { this.symbolAskPrice = price; }
+    public void setBidPriceUpdateTime(long time) { this.bidPriceUpdateTime = time; }
+    public void setAskPriceUpdateTime(long time) { this.askPriceUpdateTime = time; }    
+}
+
+// Define class to get Order Status
+class MyOrderStatusObjClass {
+
+    private int orderId;
+    private double filledPrice;
+    private int remainingQuantity,  filledQuantity;
+    private long updateTime;
+    public MyOrderStatusObjClass(int orderId) {
+        this.orderId = orderId;
+        this.filledPrice = 0.0;
+        this.remainingQuantity = -1;
+        this.filledQuantity = 0;
+        this.updateTime = -1;
+    }    
+
+    public int getOrderId() { return this.orderId; }
+    public double getFilledPrice() { return this.filledPrice; }    
+    public int getRemainingQuantity() { return this.remainingQuantity; }        
+    public int getFilledQuantity() { return this.filledQuantity; }
+    public long getUpdateTime() { return this.updateTime; } 
+    
+    public void setOrderId(int orderId) { this.orderId = orderId; }
+    public void setFilledPrice(double price) { this.filledPrice = price; }    
+    public void setRemainingQuantity(int quantity) { this.remainingQuantity = quantity; }        
+    public void setFilledQuantity(int quantity) { this.filledQuantity = quantity; }
+    public void setUpdateTime(long time) { this.updateTime = time; }
+    
+}
+
+// Define class to store Manual Intervention Signals
+class MyManualInterventionClass {
+    private int slotNumber, actionIndicator;
+    private String targetValue;
+    public static final int SQUAREOFF = 1;
+    public static final int UPDATETAKEPROFIT = 2;
+    public static final int UPDATESTOPLOSS = 3;
+    public static final int STOPMONITORING = 4;   
+    
+    public MyManualInterventionClass(int slotNumber, String targetValue, int actionIndicator) {
+        this.slotNumber = slotNumber;
+        this.targetValue = targetValue;
+        this.actionIndicator = actionIndicator;
+    }
+    
+    public int getSlotNumber() { return this.slotNumber; }
+    public String getTargetValue() { return this.targetValue; }
+    public int getActionIndicator() { return this.actionIndicator; }
+    
+    public void setSlotNumber(int slotNumber) { this.slotNumber = slotNumber; }
+    public void setTargetValue(String targetValue) { this.targetValue = targetValue; }
+    public void setActionIndicator(int actionIndicator) { this.actionIndicator = actionIndicator; }        
 }
 
 public class MyUtils {
@@ -281,57 +439,55 @@ public class MyUtils {
 
     public void defragmentOpenPositionsQueue(JedisPool jedisPool, String redisConfigurationKey, boolean debugFlag) {
 
+        Jedis jedis;
         String openPositionsQueueKeyName = getHashMapValueFromRedis(jedisPool, redisConfigurationKey, "OPENPOSITIONSQUEUE", debugFlag);
         int maxNumPositions = Integer.parseInt(getHashMapValueFromRedis(jedisPool,redisConfigurationKey, "MAXNUMPAIRPOSITIONS",debugFlag));
         if (debugFlag) {
-            System.out.println(" Maximum Positions " + maxNumPositions);                                 
+            System.out.println(" Maximum Allowed Positions " + maxNumPositions);                                 
         }
-        
-        boolean[] currentPosStatus = new boolean[10 * maxNumPositions];
-        
-        // Get slot numbers which has open positions
-        for (int index = 0; index < 10*maxNumPositions; index++) {
-            currentPosStatus[index] = false;
-            if (checkIfExistsHashMapField(jedisPool, openPositionsQueueKeyName, Integer.toString(index),false)) {
+
+        Map<String, String> updatedMap = new HashMap<String, String>();
+        int targetSlotNum = 1;
+        jedis = jedisPool.getResource();        
+        try {
+            // retrieve open position map from redis  
+            Map<String, String> retrieveMap = jedis.hgetAll(openPositionsQueueKeyName);
+            for (String keyMap : retrieveMap.keySet()) {
+                updatedMap.put(Integer.toString(targetSlotNum), retrieveMap.get(keyMap));
                 if (debugFlag) {
-                    System.out.println(" Got Open Positions for Slot Number : " + index + " position details " + getHashMapValueFromRedis(jedisPool, openPositionsQueueKeyName, Integer.toString(index), debugFlag));
-                }                                 
-                currentPosStatus[index] = true;
-            }
-        }
-
-        // Traverse the array in reverse and whenever find a position, start filling it from first empty slot
-        for (int index = (10*maxNumPositions - 1); index > maxNumPositions ; index--) {
-            // found a slot which has position
-            if (currentPosStatus[index]) {
-                // Get one empty slot
-                int slotNumber = 0;
-                boolean found = false;
-                while ((slotNumber <= 5*maxNumPositions) && (!found)) {
-                    slotNumber++;
-                    if (!currentPosStatus[slotNumber]) {
-                        found = true;
-                    }
+                    System.out.println(" Got Open Positions for Slot Number : " + keyMap + " position details " + retrieveMap.get(keyMap));
+                    System.out.println(" Targeting move from Slot Number : " + keyMap + " to " + targetSlotNum);                        
                 }
-
-                if (slotNumber < index) {
-                    // got empty slot as SlotNumber
-                    if (debugFlag) {
-                        System.out.println(" Moving position from Slot : " + index + " to slot " + slotNumber);
-                    }                                 
-                    // Copy the position from index to slotNumber                
-                    String positionValue = getHashMapValueFromRedis(jedisPool, openPositionsQueueKeyName, Integer.toString(index), debugFlag);
-                    Jedis jedis = jedisPool.getResource();
-                    jedis.hset(openPositionsQueueKeyName, Integer.toString(slotNumber), positionValue);       
-                    jedis.hdel(openPositionsQueueKeyName, Integer.toString(index));       
-                    jedisPool.returnResource(jedis);
-                    // make slotNumber occupied
-                    currentPosStatus[slotNumber] = true;
-                    // make index empty
-                    currentPosStatus[index] = false;                                    
-                }
-            }                
+                targetSlotNum++;
+            }  
+        } catch (JedisException e) {  
+            //if something wrong happen, return it back to the pool
+            if (null != jedis) {  
+                jedisPool.returnBrokenResource(jedis);
+                jedis = null;
+            }  
+        } finally {
+            //Return the Jedis instance to the pool once finished using it  
+            if (null != jedis)
+                jedisPool.returnResource(jedis);
         }        
+        
+        jedis = jedisPool.getResource();        
+        try {
+            //save to redis  
+            jedis.hmset(openPositionsQueueKeyName, updatedMap);  
+        } catch (JedisException e) {  
+            //if something wrong happen, return it back to the pool
+            if (null != jedis) {  
+                jedisPool.returnBrokenResource(jedis);
+                jedis = null;
+            }  
+        } finally {
+            //Return the Jedis instance to the pool once finished using it  
+            if (null != jedis)
+                jedisPool.returnResource(jedis);
+        }
+        
     } // End of method
 
     public void moveCurrentClosedPositions2ArchiveQueue(JedisPool jedisPool, String redisConfigurationKey, boolean debugFlag) {

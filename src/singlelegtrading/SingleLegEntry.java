@@ -98,46 +98,26 @@ public class SingleLegEntry extends Thread {
 
    }
 
-    int getOrderStatusArrayIndex(int orderId) {   
-    
-        boolean found = false;
-        int returnIndex = 0;
-        while ((returnIndex < ibInteractionClient.myOrderStatusDetails.length) && (!found)) {
-            if (ibInteractionClient.myOrderStatusDetails[returnIndex].orderIdentification == orderId) {
-                found = true;
-            } else {
-                returnIndex++;                
-            }
-        }
-
-        if (!found) {
-            returnIndex = -1;
-        }
-
-        return(returnIndex);
-    }
-
-    boolean entryOrderCompletelyFilled(int legOrderStatusIndex, int maxWaitTime) {
+    boolean entryOrderCompletelyFilled(int orderId, int maxWaitTime) {
 
         //ibInteractionClient.ibClient.reqOpenOrders();
         int timeOut = 10;
         myUtils.waitForNSeconds(timeOut);
-        while ( (ibInteractionClient.myOrderStatusDetails[legOrderStatusIndex].remainingQuantity != 0) &&
+        while ( (ibInteractionClient.myOrderStatusDetails.get(orderId).getRemainingQuantity() != 0) &&
                 (timeOut < maxWaitTime)) {
             if (debugFlag) {
-                System.out.println(String.format("%1$tY%1$tm%1$td:%1$tH:%1$tM:%1$tS ",Calendar.getInstance(exchangeTimeZone)) + "Waiting for Order to be filled for  Order ids " +  ibInteractionClient.myOrderStatusDetails[legOrderStatusIndex].orderIdentification + " for " + timeOut + " seconds");
+                System.out.println(String.format("%1$tY%1$tm%1$td:%1$tH:%1$tM:%1$tS ",Calendar.getInstance(exchangeTimeZone)) + "Waiting for Order to be filled for  Order ids " +  ibInteractionClient.myOrderStatusDetails.get(orderId).getOrderId() + " for " + timeOut + " seconds");
             } 
             timeOut += 10;                
             // Check if following needs to be commented
             ibInteractionClient.ibClient.reqOpenOrders();
             myUtils.waitForNSeconds(10);
         }
-        if ((ibInteractionClient.myOrderStatusDetails[legOrderStatusIndex].remainingQuantity == 0)) {
+        if ((ibInteractionClient.myOrderStatusDetails.get(orderId).getRemainingQuantity() == 0)) {
             return(true);
         } else {
             return(false);
-        }
-        
+        }        
     }
 
     void updateOpenPositionsQueue(String queueKeyName, String updateDetails, String orderStatus, double pairSpread, int entryOrderId, int slotNumber, String bidAskPriceDetails ) {
@@ -229,50 +209,39 @@ public class SingleLegEntry extends Thread {
 
         System.out.println("Placed Orders - with orderID as : " +  legOrderId + " for " + legPosition);
         
-        String bidAskDetails = legName + "_" + ibInteractionClient.myBidAskPriceDetails[slotNumber].symbolBidPrice + "_" + ibInteractionClient.myBidAskPriceDetails[slotNumber].symbolAskPrice;
+        String bidAskDetails = legName + "_" + ibInteractionClient.myBidAskPriceDetails.get(slotNumber).getSymbolBidPrice() + "_" + ibInteractionClient.myBidAskPriceDetails.get(slotNumber).getSymbolAskPrice();
         // update the Open position queue with order inititated status message
         updateOpenPositionsQueue(openPositionsQueueKeyName, legDetails, "entryorderinitiated", legFilledPrice, legOrderId, slotNumber, bidAskDetails );                            
         
-        if (legOrderId > 0) {
-            // Get index of Order Array of ibinteraction client to get back order status
-            int indexOrderSymbol = getOrderStatusArrayIndex(legOrderId);
-            if (indexOrderSymbol < 0) {
-                // Try after 20 second to get indexes
-                myUtils.waitForNSeconds(20);
-                indexOrderSymbol = getOrderStatusArrayIndex(legOrderId);
-            }
-            
+        if (legOrderId > 0) {           
             // Wait for orders to be completely filled            
-            if ( (indexOrderSymbol >= 0) && (entryOrderCompletelyFilled(indexOrderSymbol, 750)) ) {
-                bidAskDetails = legName + "_" + ibInteractionClient.myBidAskPriceDetails[slotNumber].symbolBidPrice + "_" + ibInteractionClient.myBidAskPriceDetails[slotNumber].symbolAskPrice ;
-                bidAskDetails = bidAskDetails + "__" + legOrderId + "_" + legName + "_" + ibInteractionClient.myOrderStatusDetails[indexOrderSymbol].filledPrice ;
-                System.out.println(String.format("%1$tY%1$tm%1$td:%1$tH:%1$tM:%1$tS ",Calendar.getInstance(exchangeTimeZone)) + "Entry Order leg filled for  Order id " +  legOrderId + " order side " + legPosition +" at avg filled price " + ibInteractionClient.myOrderStatusDetails[indexOrderSymbol].filledPrice);
-                legFilledPrice = ibInteractionClient.myOrderStatusDetails[indexOrderSymbol].filledPrice * legLotSize;
+            if (entryOrderCompletelyFilled(legOrderId, 750)) {
+                bidAskDetails = legName + "_" + ibInteractionClient.myBidAskPriceDetails.get(slotNumber).getSymbolBidPrice() + "_" + ibInteractionClient.myBidAskPriceDetails.get(slotNumber).getSymbolAskPrice();
+                bidAskDetails = bidAskDetails + "__" + legOrderId + "_" + legName + "_" + ibInteractionClient.myOrderStatusDetails.get(legOrderId).getFilledPrice();
+                System.out.println(String.format("%1$tY%1$tm%1$td:%1$tH:%1$tM:%1$tS ",Calendar.getInstance(exchangeTimeZone)) + "Entry Order leg filled for  Order id " +  legOrderId + " order side " + legPosition + " at avg filled price " + ibInteractionClient.myOrderStatusDetails.get(legOrderId).getFilledPrice());
+                legFilledPrice = ibInteractionClient.myOrderStatusDetails.get(legOrderId).getFilledPrice() * legLotSize;
                 //if (legPosition.equalsIgnoreCase("BUY")) {
                 //    legFilledPrice = 1 * legFilledPrice;
                 //} else if (legPosition.equalsIgnoreCase("SELL")) {
                 //    legFilledPrice = -1 * legFilledPrice;                    
                 //}
                 // update Redis queue with entered order
-                updateOpenPositionsQueue(openPositionsQueueKeyName, legDetails, "entryorderfilled", legFilledPrice, legOrderId, slotNumber, bidAskDetails);                            
-            } else if (indexOrderSymbol >= 0) {
+                updateOpenPositionsQueue(openPositionsQueueKeyName, legDetails, "entryorderfilled", legFilledPrice, legOrderId, slotNumber, bidAskDetails); 
+            } else {
                 ibInteractionClient.requestExecutionDetailsHistorical(legOrderId,1);
                 myUtils.waitForNSeconds(30);
-                bidAskDetails = legName + "_" + ibInteractionClient.myBidAskPriceDetails[slotNumber].symbolBidPrice + "_" + ibInteractionClient.myBidAskPriceDetails[slotNumber].symbolAskPrice ;
-                bidAskDetails = bidAskDetails + "__" + legOrderId + "_" + legName + "_" + ibInteractionClient.myOrderStatusDetails[indexOrderSymbol].filledPrice ;
-                System.out.println(String.format("%1$tY%1$tm%1$td:%1$tH:%1$tM:%1$tS ",Calendar.getInstance(exchangeTimeZone)) + "Entry Order leg filled for  Order id " +  legOrderId + " order side " + legPosition +" at avg filled price " + ibInteractionClient.myOrderStatusDetails[indexOrderSymbol].filledPrice);
-                legFilledPrice = ibInteractionClient.myOrderStatusDetails[indexOrderSymbol].filledPrice * legLotSize;
+                bidAskDetails = legName + "_" + ibInteractionClient.myBidAskPriceDetails.get(slotNumber).getSymbolBidPrice() + "_" + ibInteractionClient.myBidAskPriceDetails.get(slotNumber).getSymbolAskPrice();
+                bidAskDetails = bidAskDetails + "__" + legOrderId + "_" + legName + "_" + ibInteractionClient.myOrderStatusDetails.get(legOrderId).getFilledPrice();
+                System.out.println(String.format("%1$tY%1$tm%1$td:%1$tH:%1$tM:%1$tS ",Calendar.getInstance(exchangeTimeZone)) + "Entry Order leg filled for  Order id " +  legOrderId + " order side " + legPosition + " at avg filled price " + ibInteractionClient.myOrderStatusDetails.get(legOrderId).getFilledPrice());
+                legFilledPrice = ibInteractionClient.myOrderStatusDetails.get(legOrderId).getFilledPrice() * legLotSize;
                 //if (legPosition.equalsIgnoreCase("BUY")) {
                 //    legFilledPrice = 1 * legFilledPrice;
                 //} else if (legPosition.equalsIgnoreCase("SELL")) {
                 //    legFilledPrice = -1 * legFilledPrice;                    
                 //}
                 // update Redis queue with entered order
-                updateOpenPositionsQueue(openPositionsQueueKeyName, legDetails, "entryorderinitiated", legFilledPrice, legOrderId, slotNumber, bidAskDetails);                            
+                updateOpenPositionsQueue(openPositionsQueueKeyName, legDetails, "entryorderinitiated", legFilledPrice, legOrderId, slotNumber, bidAskDetails);
                 System.out.println(String.format("%1$tY%1$tm%1$td:%1$tH:%1$tM:%1$tS ",Calendar.getInstance(exchangeTimeZone)) + "Please Check Order Status manually as entry Order initiated but did not receive Confirmation for Orders filling for Order id " +  legOrderId );
-            } else {
-                myUtils.waitForNSeconds(30);
-                System.out.println(String.format("%1$tY%1$tm%1$td:%1$tH:%1$tM:%1$tS ",Calendar.getInstance(exchangeTimeZone)) + "Please Check Order Status manually as entry Order initiated but Orders Array Index could not be found for Order id " +  legOrderId );   
             }
         }
                 
@@ -289,7 +258,7 @@ public class SingleLegEntry extends Thread {
         } else {
             enterLegPosition();
             // Debug Message
-            System.out.println(String.format("%1$tY%1$tm%1$td:%1$tH:%1$tM:%1$tS ",Calendar.getInstance(exchangeTimeZone)) + "Tried Entering Position as " +  legName + ". Exiting this thread Now.");            
+            System.out.println(String.format("%1$tY%1$tm%1$td:%1$tH:%1$tM:%1$tS ",Calendar.getInstance(exchangeTimeZone)) + "Tried Entering Position as " +  legName + ". Exiting this thread Now.");
         }                
     }    
     

@@ -26,8 +26,10 @@ SOFTWARE.
 package singlelegtrading;
 
 import java.util.Calendar;
+import java.util.Map;
 import java.util.TimeZone;
 import redis.clients.jedis.*;
+import redis.clients.jedis.exceptions.JedisException;
 
 /**
  * @author Manish Kumar Singh
@@ -59,9 +61,7 @@ public class MonitorEntrySignals extends Thread {
    private int MAXPOSITIONS = 5;
    private double MAXCOMBOSPREAD = 300000.0;
    
-   private int nextOpenSlotNumber = 6;
-   
-   private static final int MAXALLOWEDOPENSLOTS = 50;      
+   private int nextOpenSlotNumber = 6;  
 
    private int MINHALFLIFE = 10;         
    private int MAXHALFLIFE = 90;      
@@ -120,25 +120,36 @@ public class MonitorEntrySignals extends Thread {
             MAXZSCORE = Double.parseDouble(myUtils.getHashMapValueFromRedis(jedisPool, redisConfigurationKey, "MAXZSCORE", false));
         }
         
-        nextOpenSlotNumber = getMinimumOpenPositionSlotNumber(openPositionsQueueKeyName, 1, MAXALLOWEDOPENSLOTS);        
+        nextOpenSlotNumber = getMinimumOpenPositionSlotNumber(openPositionsQueueKeyName, 1);        
         // Debug Message
         System.out.println(String.format("%1$tY%1$tm%1$td:%1$tH:%1$tM:%1$tS ",Calendar.getInstance(exchangeTimeZone)) + "Info : Monitoring Entry Signals for Strategy " + strategyName + " confOrderType " + confOrderType + " nextSlotNum " + nextOpenSlotNumber + " MAXPOSITIONS " + MAXPOSITIONS + " MAXCOMBOSPREAD " + MAXCOMBOSPREAD);
 
    }
 
-    int getMinimumOpenPositionSlotNumber(String queueKeyName, int minimumSlotNum, int maximumSlotNum) {   
+    int getMinimumOpenPositionSlotNumber(String queueKeyName, int minimumSlotNum) {   
    
         // Find the fields value of hash to update entered position
-        int slotNumber = maximumSlotNum;
-        boolean found = false;
-        while ((!found) && (slotNumber >= minimumSlotNum)) {
-            slotNumber--;
-            if (myUtils.checkIfExistsHashMapField(jedisPool, queueKeyName, Integer.toString(slotNumber),false)) {
-                found = true;
-            }
-        }
-        slotNumber++;
-        
+        Jedis jedis;
+        int slotNumber = minimumSlotNum;
+
+        jedis = jedisPool.getResource();        
+        try {
+            // retrieve open position map from redis  
+            Map<String, String> retrieveMap = jedis.hgetAll(queueKeyName);
+            for (String keyMap : retrieveMap.keySet()) {
+                slotNumber = Math.max(slotNumber, Integer.parseInt(keyMap));
+            }  
+        } catch (JedisException e) {  
+            //if something wrong happen, return it back to the pool
+            if (null != jedis) {  
+                jedisPool.returnBrokenResource(jedis);
+                jedis = null;
+            }  
+        } finally {
+            //Return the Jedis instance to the pool once finished using it  
+            if (null != jedis)
+                jedisPool.returnResource(jedis);
+        }         
         return(slotNumber);
     }
 
@@ -322,19 +333,22 @@ public class MonitorEntrySignals extends Thread {
     boolean checkExistingOpenPositions(String openPositionsQueueKeyName, String entryTimeStamp, String newSignalComboName) {
         boolean returnValue = true;
         boolean alreadyExisting = false;
-        
-        // Go through first MAXPOSITIONS slots to check for open positions
-        int slotNumber = 1;
+        Jedis jedis;
         int numOpenPositions = 0;
-        while (slotNumber <= (MAXALLOWEDOPENSLOTS)) {           
-            if (myUtils.checkIfExistsHashMapField(jedisPool,openPositionsQueueKeyName, Integer.toString(slotNumber),debugFlag) ) {
+        
+        // Go through all open position slots to check for existance of Current Signal        
+        jedis = jedisPool.getResource();
+        try {
+            // retrieve open position map from redis  
+            Map<String, String> retrieveMap = jedis.hgetAll(openPositionsQueueKeyName);
+            for (String keyMap : retrieveMap.keySet()) {
+                // Do Stuff here
                 numOpenPositions++; 
                 // Since position exists, check if exisitng pairPosition and new pair Position is same
-                TradingObject myTradeObject = new TradingObject(myUtils.getHashMapValueFromRedis(jedisPool, openPositionsQueueKeyName, Integer.toString(slotNumber),debugFlag));                                                       
+                TradingObject myTradeObject = new TradingObject(retrieveMap.get(keyMap));                                                       
                 if ( (myTradeObject.getTradingObjectName().matches(newSignalComboName)) && (!duplicateComboAllowed.equalsIgnoreCase("yes")) ) {
                     // new position already exists
                     alreadyExisting = true;
-                    // TBD - TODO - make alreadyExisting true only if timestamp of existing position and now/new position is < 360
                 }
                 // Following checks if we have position against any one leg of pair 
                 if ( (!duplicateLegAllowed.equalsIgnoreCase("yes")) && (!alreadyExisting) ) {
@@ -347,10 +361,20 @@ public class MonitorEntrySignals extends Thread {
                         alreadyExisting = true;
                     } 
                 }
-            }
-            slotNumber++;
-        }   
-        
+                
+            }  
+        } catch (JedisException e) {  
+            //if something wrong happen, return it back to the pool
+            if (null != jedis) {  
+                jedisPool.returnBrokenResource(jedis);
+                jedis = null;
+            }  
+        } finally {
+            //Return the Jedis instance to the pool once finished using it  
+            if (null != jedis)
+                jedisPool.returnResource(jedis);
+        }        
+       
         if ((alreadyExisting) || (numOpenPositions >= MAXPOSITIONS)) {
             returnValue = false;
         }
@@ -365,36 +389,19 @@ public class MonitorEntrySignals extends Thread {
 
         boolean returnValue = true;
         String lastTradeTimeStamp = "20150000000000";
+        Jedis jedis;
         
-        // Go through all closed positions
-        int indexNumber = 1;        
-        while ( returnValue && (myUtils.checkIfExistsHashMapField(jedisPool,closedPositionsQueueKeyName, Integer.toString(indexNumber),debugFlag)) ) {           
-            // Since position exists in closedQueue, check if exisitng pairPosition and new pair Position is same
-            TradingObject myTradeObject = new TradingObject(myUtils.getHashMapValueFromRedis(jedisPool, closedPositionsQueueKeyName, Integer.toString(indexNumber),debugFlag));                                                       
-            if (myTradeObject.getTradingObjectName().matches(newSignalComboName)) {
-                // new position has been trades in past
-                // check if exit was due to loss. if loss then apply moratorium else not
-                double roundTripBrokerage = Double.parseDouble(myTradeObject.getEntrySpread()) * (0.01 + 0.0019 + 0.0001) / 100;
-                if (myTradeObject.getEntryTimeStamp().substring(0,8).matches(myTradeObject.getExitTimeStamp().substring(0,8))) {
-                    roundTripBrokerage = roundTripBrokerage + Double.parseDouble(myTradeObject.getExitSpread()) * (0.01 + 0.0019 + 0.0001) / 100;                    
-                } else {
-                    roundTripBrokerage = roundTripBrokerage + Double.parseDouble(myTradeObject.getExitSpread()) * (0.01 + 0.0019 + 0.0001) / 100;                    
-                }
-                double tradePnL = 0;
-                if (Integer.parseInt(myTradeObject.getSideAndSize()) > 0) {
-                    tradePnL += Double.parseDouble(myTradeObject.getExitSpread()) - Double.parseDouble(myTradeObject.getEntrySpread()) - roundTripBrokerage;
-                } else if (Integer.parseInt(myTradeObject.getSideAndSize()) < 0) {
-                    tradePnL += Double.parseDouble(myTradeObject.getEntrySpread()) - Double.parseDouble(myTradeObject.getExitSpread()) - roundTripBrokerage;
-                }
-                if (tradePnL < 0) {
-                    lastTradeTimeStamp = myTradeObject.getExitTimeStamp();                
-                    // exit Time stamp of past trade occurs in the same day as new proposed entry
-                    // make returnValue false if exit timestamp of existing position and now/new position is < 37 bars i.e. one trading day equivalent
-                    int elapsedTradingMinutes = 10 * myUtils.calcElapsedBars(jedisPool, lastTradeTimeStamp, entryTimeStamp, exchangeTimeZone, exchangeHolidayListKeyName, false);
-                    if (elapsedTradingMinutes <= minimumMoratoriumForPosition) {
-                        returnValue = false;                                                
-                    }
-                } else {
+        // Go through all closed positions        
+        jedis = jedisPool.getResource();
+
+        try {
+            // retrieve open position map from redis  
+            Map<String, String> retrieveMap = jedis.hgetAll(closedPositionsQueueKeyName);
+            for (String keyMap : retrieveMap.keySet()) {
+                // Since position exists in closedQueue, check if exisitng pairPosition and new pair Position is same
+                TradingObject myTradeObject = new TradingObject(retrieveMap.get(keyMap));                                                       
+                if (myTradeObject.getTradingObjectName().matches(newSignalComboName)) {
+                    // new position has been trades in past. Apply moratorium period
                     lastTradeTimeStamp = myTradeObject.getExitTimeStamp();                
                     // exit Time stamp of past trade occurs in the same day as new proposed entry
                     // make returnValue false if exit timestamp of existing position and now/new position is < 37 bars i.e. one trading day equivalent
@@ -402,10 +409,39 @@ public class MonitorEntrySignals extends Thread {
                     if (elapsedTradingMinutes <= minimumMoratoriumForPosition) {
                         returnValue = false;                                                
                     }                    
-                }
-            }
-            indexNumber++;
-        }   
+                    /*
+                    //check if exit was due to loss. if loss then do something.
+                    double roundTripBrokerage = Double.parseDouble(myTradeObject.getEntrySpread()) * (0.01 + 0.0019 + 0.0001) / 100;
+                    if (myTradeObject.getEntryTimeStamp().substring(0,8).matches(myTradeObject.getExitTimeStamp().substring(0,8))) {
+                        roundTripBrokerage = roundTripBrokerage + Double.parseDouble(myTradeObject.getExitSpread()) * (0.01 + 0.0019 + 0.0001) / 100;                    
+                    } else {
+                        roundTripBrokerage = roundTripBrokerage + Double.parseDouble(myTradeObject.getExitSpread()) * (0.01 + 0.0019 + 0.0001) / 100;                    
+                    }
+                    double tradePnL = 0;
+                    if (Integer.parseInt(myTradeObject.getSideAndSize()) > 0) {
+                        tradePnL += Double.parseDouble(myTradeObject.getExitSpread()) - Double.parseDouble(myTradeObject.getEntrySpread()) - roundTripBrokerage;
+                    } else if (Integer.parseInt(myTradeObject.getSideAndSize()) < 0) {
+                        tradePnL += Double.parseDouble(myTradeObject.getEntrySpread()) - Double.parseDouble(myTradeObject.getExitSpread()) - roundTripBrokerage;
+                    }
+                    if (tradePnL < 0) {
+                        // DO SPECIFIC THINGS HERE IN CASE OF PREIOUS LOSS MAKING TRADE
+                    } else {
+                        // DO SPECIFIC THINGS HERE IN CASE OF PREVIOUS NON-NEGATIVE TRADE
+                    }
+                    */
+                }                
+            }  
+        } catch (JedisException e) {  
+            //if something wrong happen, return it back to the pool
+            if (null != jedis) {  
+                jedisPool.returnBrokenResource(jedis);
+                jedis = null;
+            }  
+        } finally {
+            //Return the Jedis instance to the pool once finished using it  
+            if (null != jedis)
+                jedisPool.returnResource(jedis);
+        }        
 
         // Debug Message
         System.out.println("lastTradeTimeStamp :" + lastTradeTimeStamp + " currentTimeStamp :" + entryTimeStamp + " returning : " + returnValue + " for " + newSignalComboName);                            
@@ -495,13 +531,12 @@ public class MonitorEntrySignals extends Thread {
                         withinEntryOrderTimeRange(entrySignal[TradingObject.ENTRY_TIMESTAMP_INDEX]) &&
                         withinStipulatedSpreadRange(entrySignal[TradingObject.ENTRY_SPREAD_INDEX]) &&
                         checkExistingOpenPositions(openPositionsQueueKeyName, entrySignal[TradingObject.ENTRY_TIMESTAMP_INDEX],entrySignal[TradingObject.NAME_INDEX]) && 
-                        (nextOpenSlotNumber < MAXALLOWEDOPENSLOTS) &&
                         checkLastTradeTimeStamp(closedPositionsQueueKeyName, entrySignal[TradingObject.ENTRY_TIMESTAMP_INDEX],entrySignal[TradingObject.NAME_INDEX]) &&
                         notBlackListed(blackListedSymbols,entrySignal[TradingObject.NAME_INDEX]) &&
                         checkIfLongOrShortEntryAllowed(allowLongIndicator, allowShortIndicator, entrySignal[TradingObject.SIDE_SIZE_INDEX]) &&
                         withinStipulatedCurrentPnLForToday(MAXNUMENTRIESINADAY,openPositionsQueueKeyName,closedPositionsQueueKeyName,NOFURTHERPOSITIONTAKEPROFITLIMIT,NOFURTHERPOSITIONSTOPLOSSLIMIT) ) {
                     // Block position slot - doing it here outside entry thread to avoid race condition which is seen happeneing if done inside thread
-                    while ((myUtils.checkIfExistsHashMapField(jedisPool, openPositionsQueueKeyName, Integer.toString(nextOpenSlotNumber),false)) && (nextOpenSlotNumber < MAXALLOWEDOPENSLOTS)) {
+                    while ((myUtils.checkIfExistsHashMapField(jedisPool, openPositionsQueueKeyName, Integer.toString(nextOpenSlotNumber),false)) ) {
                         nextOpenSlotNumber++;
                     }
                     blockOpenPositionSlot(openPositionsQueueKeyName, entrySignalReceived, nextOpenSlotNumber);
