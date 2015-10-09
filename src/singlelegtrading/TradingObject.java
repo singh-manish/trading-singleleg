@@ -1,28 +1,27 @@
 /*
-The MIT License (MIT)
+ The MIT License (MIT)
 
-Copyright (c) 2015 Manish Kumar Singh
+ Copyright (c) 2015 Manish Kumar Singh
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+ Permission is hereby granted, free of charge, to any person obtaining a copy
+ of this software and associated documentation files (the "Software"), to deal
+ in the Software without restriction, including without limitation the rights
+ to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ copies of the Software, and to permit persons to whom the Software is
+ furnished to do so, subject to the following conditions:
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+ The above copyright notice and this permission notice shall be included in all
+ copies or substantial portions of the Software.
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+ SOFTWARE.
  
-*/
-
+ */
 package singlelegtrading;
 
 import java.text.DecimalFormat;
@@ -30,274 +29,278 @@ import java.text.DecimalFormat;
 /**
  * @author Manish Kumar Singh
  */
-
 public class TradingObject {
 
     // Index Values for Object
-    public static final int ENTRY_TIMESTAMP_INDEX = 0;    
-    public static final int NAME_INDEX = 1;    
-    public static final int SIDE_SIZE_INDEX = 2;    
-    public static final int STRUCTURE_INDEX = 3;    
-    public static final int ENTRY_ZSCORE_INDEX = 4;    
-    public static final int ENTRY_MEAN_INDEX = 5;    
-    public static final int ENTRY_HALFLIFE_INDEX = 6;    
-    public static final int ENTRY_STDDEV_INDEX = 7;    
-    public static final int ENTRY_BID_ASK_FILL_INDEX = 8;    
-    public static final int ENTRY_REGRESSION_SLOPE_INDEX = 9;    
-    public static final int ORDER_STATE_INDEX = 10;    
-    public static final int ENTRY_SPREAD_INDEX = 11;    
-    public static final int EXPIRY_INDEX = 12;    
-    public static final int ENTRY_ORDERIDS_INDEX = 13;    
-    public static final int LOWER_BREACH_INDEX = 14;    
-    public static final int UPPER_BREACH_INDEX = 15;    
-    public static final int LAST_KNOWN_SPREAD_INDEX = 16;    
-    public static final int LAST_UPDATED_TIMESTAMP_INDEX = 17;    
-    public static final int EXIT_SPREAD_INDEX = 18;    
-    public static final int EXIT_TIMESTAMP_INDEX = 19;    
-    public static final int EXIT_ORDERIDS_INDEX = 20;    
-    public static final int EXIT_BID_ASK_FILL_INDEX = 21;        
+    public static final int ENTRY_TIMESTAMP_INDEX = 0;
+    public static final int NAME_INDEX = 1;
+    public static final int SIDE_SIZE_INDEX = 2;
+    public static final int STRUCTURE_INDEX = 3;
+    public static final int ENTRY_ZSCORE_INDEX = 4;
+    public static final int ENTRY_MEAN_INDEX = 5;
+    public static final int ENTRY_HALFLIFE_INDEX = 6;
+    public static final int ENTRY_STDDEV_INDEX = 7;
+    public static final int ENTRY_BID_ASK_FILL_INDEX = 8;
+    public static final int ENTRY_REGRESSION_SLOPE_INDEX = 9;
+    public static final int ORDER_STATE_INDEX = 10;
+    public static final int ENTRY_SPREAD_INDEX = 11;
+    public static final int EXPIRY_INDEX = 12;
+    public static final int ENTRY_ORDERIDS_INDEX = 13;
+    public static final int LOWER_BREACH_INDEX = 14;
+    public static final int UPPER_BREACH_INDEX = 15;
+    public static final int LAST_KNOWN_SPREAD_INDEX = 16;
+    public static final int LAST_UPDATED_TIMESTAMP_INDEX = 17;
+    public static final int EXIT_SPREAD_INDEX = 18;
+    public static final int EXIT_TIMESTAMP_INDEX = 19;
+    public static final int EXIT_ORDERIDS_INDEX = 20;
+    public static final int EXIT_BID_ASK_FILL_INDEX = 21;
     public static final int MFE_MAE_INDEX = 22;
-    
-    public static final int MAX_NUM_ELEMENTS = 23;        
-    
+
+    public static final int MAX_NUM_ELEMENTS = 23;
+
     private String[] tradeObjectStructure;
 
     TradingObject(String incomingTradeObject) {
-        
+
         tradeObjectStructure = new String[MAX_NUM_ELEMENTS];
 
         if (incomingTradeObject.length() > 0) {
             String[] tempTradeObjectStructure = incomingTradeObject.split(",");
-            for (int index = 0; index < tempTradeObjectStructure.length; index++){
+            for (int index = 0; index < tempTradeObjectStructure.length; index++) {
                 tradeObjectStructure[index] = tempTradeObjectStructure[index];
-            }            
+            }
         }
     }
-    
+
     // assemble and return Structure
     public String getCompleteTradingObjectString() {
         String returnString = "";
-        
+
         for (int index = 0; index < (tradeObjectStructure.length - 1); index++) {
             returnString = returnString + tradeObjectStructure[index] + ",";
         }
-        
-        returnString = returnString + tradeObjectStructure[tradeObjectStructure.length - 1];                
 
-        return(returnString);
+        returnString = returnString + tradeObjectStructure[tradeObjectStructure.length - 1];
+
+        return (returnString);
     }
 
     public void initiateAndValidate() {
 
-        if ( (tradeObjectStructure[ENTRY_ZSCORE_INDEX] != null) && (
-                tradeObjectStructure[ENTRY_ZSCORE_INDEX].length() > 0 ) ) {
-            DecimalFormat myDf = new DecimalFormat("0.00"); 
+        if ((tradeObjectStructure[ENTRY_ZSCORE_INDEX] != null) && (tradeObjectStructure[ENTRY_ZSCORE_INDEX].length() > 0)) {
+            DecimalFormat myDf = new DecimalFormat("0.00");
             tradeObjectStructure[ENTRY_ZSCORE_INDEX] = myDf.format(Double.valueOf(tradeObjectStructure[ENTRY_ZSCORE_INDEX]));
-        }         
-
-        if ( (tradeObjectStructure[ENTRY_MEAN_INDEX] != null) && 
-                (tradeObjectStructure[ENTRY_MEAN_INDEX].length() > 0 ) ) {
-            DecimalFormat myDf = new DecimalFormat("0.00");             
-            tradeObjectStructure[ENTRY_MEAN_INDEX] = myDf.format(Double.valueOf(tradeObjectStructure[ENTRY_MEAN_INDEX]));
-        }         
-
-        if ( (tradeObjectStructure[ENTRY_HALFLIFE_INDEX] != null) && 
-                (tradeObjectStructure[ENTRY_HALFLIFE_INDEX].length() > 0 ) ) {
-            DecimalFormat myDf = new DecimalFormat("0.00");  
-            tradeObjectStructure[ENTRY_HALFLIFE_INDEX] = myDf.format(Double.valueOf(tradeObjectStructure[ENTRY_HALFLIFE_INDEX]));
-        }         
-
-        if ( (tradeObjectStructure[ENTRY_STDDEV_INDEX] != null) &&
-                (tradeObjectStructure[ENTRY_STDDEV_INDEX].length() > 0 ) ) {
-            DecimalFormat myDf = new DecimalFormat("0.00");  
-            tradeObjectStructure[ENTRY_STDDEV_INDEX] = myDf.format(Double.valueOf(tradeObjectStructure[ENTRY_STDDEV_INDEX]));
-        }         
-            
-        if ( (tradeObjectStructure[ENTRY_SPREAD_INDEX] == null) ||
-                (tradeObjectStructure[ENTRY_SPREAD_INDEX].length() <= 0) ) {
-            tradeObjectStructure[ENTRY_SPREAD_INDEX] = String.format("%.2f",0.0);
-        } else {
-            DecimalFormat myDf = new DecimalFormat("0.00");  
-            tradeObjectStructure[ENTRY_SPREAD_INDEX] = myDf.format(Double.valueOf(tradeObjectStructure[ENTRY_SPREAD_INDEX]));    
-        }        
-
-        if ( (tradeObjectStructure[LAST_KNOWN_SPREAD_INDEX] == null) ||
-                (tradeObjectStructure[LAST_KNOWN_SPREAD_INDEX].length() <= 0) ) {
-            tradeObjectStructure[LAST_KNOWN_SPREAD_INDEX] = String.format("%.2f",0.0);
-        } else {
-            DecimalFormat myDf = new DecimalFormat("0.00");  
-            tradeObjectStructure[LAST_KNOWN_SPREAD_INDEX] = myDf.format(Double.valueOf(tradeObjectStructure[LAST_KNOWN_SPREAD_INDEX]));    
         }
 
-        if ( (tradeObjectStructure[LAST_UPDATED_TIMESTAMP_INDEX] == null) ||
-                (tradeObjectStructure[LAST_UPDATED_TIMESTAMP_INDEX].length() <= 0) ) {
-            tradeObjectStructure[LAST_UPDATED_TIMESTAMP_INDEX]= String.format("%d", -1);
-        } 
-    
+        if ((tradeObjectStructure[ENTRY_MEAN_INDEX] != null)
+                && (tradeObjectStructure[ENTRY_MEAN_INDEX].length() > 0)) {
+            DecimalFormat myDf = new DecimalFormat("0.00");
+            tradeObjectStructure[ENTRY_MEAN_INDEX] = myDf.format(Double.valueOf(tradeObjectStructure[ENTRY_MEAN_INDEX]));
+        }
+
+        if ((tradeObjectStructure[ENTRY_HALFLIFE_INDEX] != null)
+                && (tradeObjectStructure[ENTRY_HALFLIFE_INDEX].length() > 0)) {
+            DecimalFormat myDf = new DecimalFormat("0.00");
+            tradeObjectStructure[ENTRY_HALFLIFE_INDEX] = myDf.format(Double.valueOf(tradeObjectStructure[ENTRY_HALFLIFE_INDEX]));
+        }
+
+        if ((tradeObjectStructure[ENTRY_STDDEV_INDEX] != null)
+                && (tradeObjectStructure[ENTRY_STDDEV_INDEX].length() > 0)) {
+            DecimalFormat myDf = new DecimalFormat("0.00");
+            tradeObjectStructure[ENTRY_STDDEV_INDEX] = myDf.format(Double.valueOf(tradeObjectStructure[ENTRY_STDDEV_INDEX]));
+        }
+
+        if ((tradeObjectStructure[ENTRY_SPREAD_INDEX] == null)
+                || (tradeObjectStructure[ENTRY_SPREAD_INDEX].length() <= 0)) {
+            tradeObjectStructure[ENTRY_SPREAD_INDEX] = String.format("%.2f", 0.0);
+        } else {
+            DecimalFormat myDf = new DecimalFormat("0.00");
+            tradeObjectStructure[ENTRY_SPREAD_INDEX] = myDf.format(Double.valueOf(tradeObjectStructure[ENTRY_SPREAD_INDEX]));
+        }
+
+        if ((tradeObjectStructure[LAST_KNOWN_SPREAD_INDEX] == null)
+                || (tradeObjectStructure[LAST_KNOWN_SPREAD_INDEX].length() <= 0)) {
+            tradeObjectStructure[LAST_KNOWN_SPREAD_INDEX] = String.format("%.2f", 0.0);
+        } else {
+            DecimalFormat myDf = new DecimalFormat("0.00");
+            tradeObjectStructure[LAST_KNOWN_SPREAD_INDEX] = myDf.format(Double.valueOf(tradeObjectStructure[LAST_KNOWN_SPREAD_INDEX]));
+        }
+
+        if ((tradeObjectStructure[LAST_UPDATED_TIMESTAMP_INDEX] == null)
+                || (tradeObjectStructure[LAST_UPDATED_TIMESTAMP_INDEX].length() <= 0)) {
+            tradeObjectStructure[LAST_UPDATED_TIMESTAMP_INDEX] = String.format("%d", -1);
+        }
+
     }
-    
-    public void setEntryTimeStamp(String newTimeStamp){
+
+    public void setEntryTimeStamp(String newTimeStamp) {
         tradeObjectStructure[ENTRY_TIMESTAMP_INDEX] = newTimeStamp;
     }
 
-    public void setEntryBidAskFillDetails(String newBidAskFillDetails){
-        tradeObjectStructure[ENTRY_BID_ASK_FILL_INDEX] = newBidAskFillDetails;
-    }    
+    public void setSideAndSize(int side, int size) {
+        String sideAndSize = "1";
+        sideAndSize = Integer.toString(size * side);
+        tradeObjectStructure[SIDE_SIZE_INDEX] = sideAndSize;
+    }
 
-    public void setOrderState(String newState){
+    public void setEntryBidAskFillDetails(String newBidAskFillDetails) {
+        tradeObjectStructure[ENTRY_BID_ASK_FILL_INDEX] = newBidAskFillDetails;
+    }
+
+    public void setOrderState(String newState) {
         tradeObjectStructure[ORDER_STATE_INDEX] = newState;
     }
 
-    public void setEntrySpread(double newSpread){
-        DecimalFormat myDf = new DecimalFormat("0.00");    
+    public void setEntrySpread(double newSpread) {
+        DecimalFormat myDf = new DecimalFormat("0.00");
         tradeObjectStructure[ENTRY_SPREAD_INDEX] = myDf.format(Double.valueOf(newSpread));
-    }    
+    }
 
-    public void setExpiry(int expiry){
+    public void setExpiry(int expiry) {
         tradeObjectStructure[EXPIRY_INDEX] = Integer.toString(expiry);
-    }        
-    
-    public void setExpiry(String expiry){
+    }
+
+    public void setExpiry(String expiry) {
         tradeObjectStructure[EXPIRY_INDEX] = expiry;
-    }        
+    }
 
-    public void setEntryOrderIDs(int entryOrderID){
+    public void setEntryOrderIDs(int entryOrderID) {
         tradeObjectStructure[ENTRY_ORDERIDS_INDEX] = Integer.toString(entryOrderID);
-    }        
+    }
 
-    public void setEntryOrderIDs(String newOrderIDs){
+    public void setEntryOrderIDs(String newOrderIDs) {
         tradeObjectStructure[ENTRY_ORDERIDS_INDEX] = newOrderIDs;
-    }        
+    }
 
-    public void setLowerBreach(int newBreach){
+    public void setLowerBreach(int newBreach) {
         tradeObjectStructure[LOWER_BREACH_INDEX] = Integer.toString(newBreach);
     }
-    
-    public void setLowerBreach(double newBreach){
-        DecimalFormat myDf = new DecimalFormat("0.00");            
+
+    public void setLowerBreach(double newBreach) {
+        DecimalFormat myDf = new DecimalFormat("0.00");
         tradeObjectStructure[LOWER_BREACH_INDEX] = myDf.format(Double.valueOf(newBreach));
     }
-    
-    public void setUpperBreach(int newBreach){
+
+    public void setUpperBreach(int newBreach) {
         tradeObjectStructure[UPPER_BREACH_INDEX] = Integer.toString(newBreach);
-    }    
+    }
 
-    public void setUpperBreach(double newBreach){
-        DecimalFormat myDf = new DecimalFormat("0.00");          
+    public void setUpperBreach(double newBreach) {
+        DecimalFormat myDf = new DecimalFormat("0.00");
         tradeObjectStructure[UPPER_BREACH_INDEX] = myDf.format(Double.valueOf(newBreach));
-    }    
+    }
 
-    public void setLastKnownSpread(double newSpread){
+    public void setLastKnownSpread(double newSpread) {
         tradeObjectStructure[LAST_KNOWN_SPREAD_INDEX] = Double.toString(newSpread);
     }
-    
-    public void setLastUpdatedTimeStamp(String newTimeStamp){
+
+    public void setLastUpdatedTimeStamp(String newTimeStamp) {
         tradeObjectStructure[LAST_UPDATED_TIMESTAMP_INDEX] = newTimeStamp;
-    }    
-    
-    public void setExitSpread(double newSpread){
-        DecimalFormat myDf = new DecimalFormat("0.00");          
+    }
+
+    public void setExitSpread(double newSpread) {
+        DecimalFormat myDf = new DecimalFormat("0.00");
         tradeObjectStructure[EXIT_SPREAD_INDEX] = myDf.format(Double.valueOf(newSpread));
     }
-    
-    public void setExitTimeStamp(String newTimeStamp){
+
+    public void setExitTimeStamp(String newTimeStamp) {
         tradeObjectStructure[EXIT_TIMESTAMP_INDEX] = newTimeStamp;
     }
 
-    public void setExitOrderIDs(int exitOrderID){
+    public void setExitOrderIDs(int exitOrderID) {
         tradeObjectStructure[EXIT_ORDERIDS_INDEX] = Integer.toString(exitOrderID);
-    }        
-    
-    public void setExitOrderIDs(String newOrderIDs){
+    }
+
+    public void setExitOrderIDs(String newOrderIDs) {
         tradeObjectStructure[EXIT_ORDERIDS_INDEX] = newOrderIDs;
-    }        
+    }
 
     public void setExitBidAskFillDetails(String newBidAskFillDetails) {
         tradeObjectStructure[EXIT_BID_ASK_FILL_INDEX] = newBidAskFillDetails;
-    }   
-    
+    }
+
     public String getEntryTimeStamp() {
-        return(tradeObjectStructure[ENTRY_TIMESTAMP_INDEX]);
+        return (tradeObjectStructure[ENTRY_TIMESTAMP_INDEX]);
     }
 
     public String getTradingObjectName() {
-        return(tradeObjectStructure[NAME_INDEX]);
+        return (tradeObjectStructure[NAME_INDEX]);
     }
-    
+
     public String getSideAndSize() {
-        return(tradeObjectStructure[SIDE_SIZE_INDEX]);
+        return (tradeObjectStructure[SIDE_SIZE_INDEX]);
     }
 
     public String getComboStructure() {
-        return(tradeObjectStructure[STRUCTURE_INDEX]);
-    }        
-    
+        return (tradeObjectStructure[STRUCTURE_INDEX]);
+    }
+
     public String getZScore() {
-        return(tradeObjectStructure[ENTRY_ZSCORE_INDEX]);
+        return (tradeObjectStructure[ENTRY_ZSCORE_INDEX]);
     }
 
-    public String getEntryMean() {    
-        return(tradeObjectStructure[ENTRY_MEAN_INDEX]);
+    public String getEntryMean() {
+        return (tradeObjectStructure[ENTRY_MEAN_INDEX]);
     }
 
-    public String getHalfLife() {    
-        return(tradeObjectStructure[ENTRY_HALFLIFE_INDEX]);
+    public String getHalfLife() {
+        return (tradeObjectStructure[ENTRY_HALFLIFE_INDEX]);
     }
 
-    public String getEntryStdDev() {    
-        return(tradeObjectStructure[ENTRY_STDDEV_INDEX]);
+    public String getEntryStdDev() {
+        return (tradeObjectStructure[ENTRY_STDDEV_INDEX]);
     }
-    
+
     public String getEntryBidAskFillDetails() {
-        return(tradeObjectStructure[ENTRY_BID_ASK_FILL_INDEX]);
-    }    
+        return (tradeObjectStructure[ENTRY_BID_ASK_FILL_INDEX]);
+    }
 
     public String getOrderState() {
-        return(tradeObjectStructure[ORDER_STATE_INDEX]);
+        return (tradeObjectStructure[ORDER_STATE_INDEX]);
     }
 
-    public String getEntrySpread(){
-        return(tradeObjectStructure[ENTRY_SPREAD_INDEX]);
-    }    
+    public String getEntrySpread() {
+        return (tradeObjectStructure[ENTRY_SPREAD_INDEX]);
+    }
 
     public String getExpiry() {
-        return(tradeObjectStructure[EXPIRY_INDEX]);
-    }        
-    
-    public String getEntryOrderIDs(){
-        return(tradeObjectStructure[ENTRY_ORDERIDS_INDEX]);
-    }        
-
-    public String getLowerBreach(){
-        return(tradeObjectStructure[LOWER_BREACH_INDEX]);
+        return (tradeObjectStructure[EXPIRY_INDEX]);
     }
-        
-    public String getUpperBreach(){
-        return(tradeObjectStructure[UPPER_BREACH_INDEX]);
-    }    
 
-    public String getLastKnownSpread(){
-        return(tradeObjectStructure[LAST_KNOWN_SPREAD_INDEX]);
+    public String getEntryOrderIDs() {
+        return (tradeObjectStructure[ENTRY_ORDERIDS_INDEX]);
     }
-    
+
+    public String getLowerBreach() {
+        return (tradeObjectStructure[LOWER_BREACH_INDEX]);
+    }
+
+    public String getUpperBreach() {
+        return (tradeObjectStructure[UPPER_BREACH_INDEX]);
+    }
+
+    public String getLastKnownSpread() {
+        return (tradeObjectStructure[LAST_KNOWN_SPREAD_INDEX]);
+    }
+
     public String getLastUpdatedTimeStamp() {
-        return(tradeObjectStructure[LAST_UPDATED_TIMESTAMP_INDEX]);
-    }    
-    
-    public String getExitSpread(){
-        return(tradeObjectStructure[EXIT_SPREAD_INDEX]);
+        return (tradeObjectStructure[LAST_UPDATED_TIMESTAMP_INDEX]);
     }
-    
-    public String getExitTimeStamp(){
-        return(tradeObjectStructure[EXIT_TIMESTAMP_INDEX]);
-    }
-    
-    public String getExitOrderIDs(){
-        return(tradeObjectStructure[EXIT_ORDERIDS_INDEX]);
-    }        
 
-    public String getExitBidAskFillDetails(){
-        return(tradeObjectStructure[EXIT_BID_ASK_FILL_INDEX]);
-    }    
+    public String getExitSpread() {
+        return (tradeObjectStructure[EXIT_SPREAD_INDEX]);
+    }
+
+    public String getExitTimeStamp() {
+        return (tradeObjectStructure[EXIT_TIMESTAMP_INDEX]);
+    }
+
+    public String getExitOrderIDs() {
+        return (tradeObjectStructure[EXIT_ORDERIDS_INDEX]);
+    }
+
+    public String getExitBidAskFillDetails() {
+        return (tradeObjectStructure[EXIT_BID_ASK_FILL_INDEX]);
+    }
 
 }
