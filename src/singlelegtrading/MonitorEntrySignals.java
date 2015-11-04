@@ -50,7 +50,6 @@ public class MonitorEntrySignals extends Thread {
     private String strategyName = "singlestr01";
     private String openPositionsQueueKeyName = "INRSTR01OPENPOSITIONS";
     private String closedPositionsQueueKeyName = "INRSTR01CLOSEDPOSITIONS";
-    private String pastClosedPositionsQueueKeyName = "INRSTR01PASTCLOSEDPOSITIONS";
     private String entrySignalsQueueKeyName = "INRSTR01ENTRYSIGNALS";
     private String confOrderType = "MARKET";
     private String duplicateComboAllowed = "yes";
@@ -62,15 +61,10 @@ public class MonitorEntrySignals extends Thread {
 
     private int nextOpenSlotNumber = 6;
 
-    private int MINHALFLIFE = 10;
-    private int MAXHALFLIFE = 90;
-
     private int MAXNUMENTRIESINADAY = 15;
     private double NOFURTHERPOSITIONTAKEPROFITLIMIT = 10000.0;
     private double NOFURTHERPOSITIONSTOPLOSSLIMIT = -10000.0;
 
-    private double MINZSCORE = 0.8;
-    private double MAXZSCORE = 2.5;
     public String exchangeHolidayListKeyName;
     private int minimumMoratoriumForPosition = 37;
     
@@ -90,7 +84,6 @@ public class MonitorEntrySignals extends Thread {
         strategyName = myUtils.getHashMapValueFromRedis(jedisPool, redisConfigurationKey, "STRATEGYNAME", false);
         openPositionsQueueKeyName = myUtils.getHashMapValueFromRedis(jedisPool, redisConfigurationKey, "OPENPOSITIONSQUEUE", false);
         closedPositionsQueueKeyName = myUtils.getHashMapValueFromRedis(jedisPool, redisConfigurationKey, "CLOSEDPOSITIONSQUEUE", false);
-        pastClosedPositionsQueueKeyName = myUtils.getHashMapValueFromRedis(jedisPool, redisConfigurationKey, "PASTCLOSEDPOSITIONSQUEUE", false);
         entrySignalsQueueKeyName = myUtils.getHashMapValueFromRedis(jedisPool, redisConfigurationKey, "ENTRYSIGNALSQUEUE", false);
         confOrderType = myUtils.getHashMapValueFromRedis(jedisPool, redisConfigurationKey, "ENTRYORDERTYPE", false);
         symbolTypeToUse = myUtils.getHashMapValueFromRedis(jedisPool, redisConfigurationKey, "TRADESYMBOLTYPE", false);
@@ -104,14 +97,6 @@ public class MonitorEntrySignals extends Thread {
 
         MAXPOSITIONS = Integer.parseInt(myUtils.getHashMapValueFromRedis(jedisPool, redisConfigurationKey, "MAXNUMPAIRPOSITIONS", false));
         MAXCOMBOSPREAD = Double.parseDouble(myUtils.getHashMapValueFromRedis(jedisPool, redisConfigurationKey, "MAXALLOWEDPAIRSPREAD", false));
-
-        MINHALFLIFE = Integer.parseInt(myUtils.getHashMapValueFromRedis(jedisPool, redisConfigurationKey, "MINHALFLIFE", false));
-        MAXHALFLIFE = Integer.parseInt(myUtils.getHashMapValueFromRedis(jedisPool, redisConfigurationKey, "MAXHALFLIFE", false));
-
-        MINZSCORE = Double.parseDouble(myUtils.getHashMapValueFromRedis(jedisPool, redisConfigurationKey, "MINZSCORE", false));
-        if (myUtils.checkIfExistsHashMapField(jedisPool, redisConfigurationKey, "MAXZSCORE", false)) {
-            MAXZSCORE = Double.parseDouble(myUtils.getHashMapValueFromRedis(jedisPool, redisConfigurationKey, "MAXZSCORE", false));
-        }
 
         nextOpenSlotNumber = getMinimumOpenPositionSlotNumber(openPositionsQueueKeyName, 1);
         // Debug Message
@@ -213,54 +198,6 @@ public class MonitorEntrySignals extends Thread {
 
         // Debug Message
         System.out.println("Spread Value :" + currentSpread + "Max Allowed spread :" + MAXCOMBOSPREAD + " returning : " + returnValue);
-
-        return (returnValue);
-    }
-
-    boolean withinStipulatedHalflifeRange(String halflifeValue) {
-
-        boolean returnValue = true;
-
-        double currentHalflife = 0.0;
-        try {
-            currentHalflife = Double.parseDouble(halflifeValue);
-        } catch (NumberFormatException ex) {
-            if (debugFlag) {
-                System.out.println("Exception caused while converting spread to double from string. Defaulting to 0.0 " + ex.getMessage());
-                currentHalflife = 0.0;
-            }
-        }
-
-        if ((Math.abs(currentHalflife) > MAXHALFLIFE) || (Math.abs(currentHalflife) < MINHALFLIFE)) {
-            returnValue = false;
-        }
-
-        // Debug Message
-        System.out.println("Halflife Value :" + currentHalflife + " Min Allowed HalfLife : " + MINHALFLIFE + " Max Allowed HalfLife : " + MAXHALFLIFE + " returning : " + returnValue);
-
-        return (returnValue);
-    }
-
-    boolean withinStipulatedZScoreRange(String zscoreValue) {
-
-        boolean returnValue = true;
-
-        double currentZScore = 1.5;
-        try {
-            currentZScore = Double.parseDouble(zscoreValue);
-        } catch (NumberFormatException ex) {
-            if (debugFlag) {
-                System.out.println("Exception caused while converting spread to double from string. Defaulting to 1.5 " + ex.getMessage());
-                currentZScore = 1.5;
-            }
-        }
-
-        if ((Math.abs(currentZScore) > MAXZSCORE) || (Math.abs(currentZScore) < MINZSCORE)) {
-            returnValue = false;
-        }
-
-        // Debug Message
-        System.out.println("ZScore Value :" + currentZScore + " Min Allowed ZScore : " + MINZSCORE + " Max Allowed ZScore : " + MAXZSCORE + " returning : " + returnValue);
 
         return (returnValue);
     }

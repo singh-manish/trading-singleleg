@@ -279,13 +279,17 @@ public class SingleLegExit implements Runnable {
                     (myMIDetails.get(miKey).getActionIndicator() == MyManualInterventionClass.STOPMONITORING) && 
                     (!quit)) {
                 terminate();
+                myMIDetails.get(miKey).setActionIndicator(MyManualInterventionClass.DEFAULT);                
             }
 
             if ((myMIDetails.containsKey(miKey)) && 
                     (myMIDetails.get(miKey).getActionIndicator() == MyManualInterventionClass.SQUAREOFF) && 
                     (!quit)) {
                 System.out.println("Exiting Leg Position : " + legObj.symbol + " as manual Intervention Signal to Square Off received");
+                // Square Off the Position
                 squareOffLegPosition(legObj);
+                // reset the action indicator
+                myMIDetails.get(miKey).setActionIndicator(MyManualInterventionClass.DEFAULT);
                 if (positionQty == 0) {
                     updatePositionStatusInQueues(String.format("%1$tY%1$tm%1$td%1$tH%1$tM%1$tS", timeNow));
                     terminate();
@@ -299,6 +303,7 @@ public class SingleLegExit implements Runnable {
                 try {
                     tempLimit = Double.parseDouble(myMIDetails.get(miKey).getTargetValue());
                     rangeLimitObj.stopLossLimit = tempLimit;
+                    myMIDetails.get(miKey).setActionIndicator(MyManualInterventionClass.DEFAULT);                    
                 } catch (Exception ex) {
                 }
             }
@@ -310,6 +315,7 @@ public class SingleLegExit implements Runnable {
                 try {
                     tempLimit = Double.parseDouble(myMIDetails.get(miKey).getTargetValue());
                     rangeLimitObj.takeProfitLimit = tempLimit;
+                    myMIDetails.get(miKey).setActionIndicator(MyManualInterventionClass.DEFAULT);                    
                 } catch (Exception ex) {
                 }
             }

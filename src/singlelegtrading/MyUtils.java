@@ -459,6 +459,7 @@ class MyManualInterventionClass {
 
     private int slotNumber, actionIndicator;
     private String targetValue;
+    public static final int DEFAULT = 0;    
     public static final int SQUAREOFF = 1;
     public static final int UPDATETAKEPROFIT = 2;
     public static final int UPDATESTOPLOSS = 3;
