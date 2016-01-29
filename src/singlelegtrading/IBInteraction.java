@@ -157,8 +157,23 @@ public class IBInteraction implements EWrapper {
 
         ibClient.cancelMktData(requestID);
 
-    } // End of stopGettingBidAskPriceForStk()    
-
+    } // End of stopGettingBidAskPriceForStk() 
+    
+    boolean checkStkMktDataSubscription(String symbol) {
+        // check if existing subscription exists for given symbol
+        // if exists then return true
+        // if subscription does not exist then return false
+        boolean subscriptionStatus = false;
+        for (int key : myTickDetails.keySet()) {
+            if ((myTickDetails.get(key).getContractDet().m_symbol.equalsIgnoreCase(symbol))
+                    && (myTickDetails.get(key).getContractDet().m_secType.equals("STK"))
+                    && (myTickDetails.get(key).getSubscriptionStatus())) {
+                subscriptionStatus = true;
+            }
+        }
+        return (subscriptionStatus);
+    } // End of checkStkMktDataSubscription  
+    
     int requestStkMktDataSubscription(int requestId, String symbol) {
 
         int returnRequestId = 0;
@@ -208,14 +223,31 @@ public class IBInteraction implements EWrapper {
 
         ibClient.cancelMktData(requestID);
 
-    } // End of stopGettingBidAskPriceForFut()     
+    } // End of stopGettingBidAskPriceForFut() 
+    
+    boolean checkFutMktDataSubscription(String symbol, String expiry) {
 
+        // check if existing subscription exists for given symbol
+        // if exists then return true
+        // if subscription does not exist then return false
+        boolean subscriptionStatus = false;
+        for (int key : myTickDetails.keySet()) {
+            if ((myTickDetails.get(key).getContractDet().m_symbol.equalsIgnoreCase(symbol))
+                    && (myTickDetails.get(key).getContractDet().m_secType.equals("FUT"))
+                    && (myTickDetails.get(key).getContractDet().m_expiry.equals(expiry))
+                    && (myTickDetails.get(key).getSubscriptionStatus())) {
+                subscriptionStatus = true;
+            }
+        }
+        return (subscriptionStatus);
+    } // End of checkFutMktDataSubscription    
+    
     int requestFutMktDataSubscription(int requestId, String symbol, String expiry) {
 
         int returnRequestId = 0;
         // check if existing subscription exists for given symbol
-        // if exists then return false.
-        // if subscription does not exist then request one and return true
+        // if exists then return request ID of subscription.
+        // if subscription does not exist then request one and return request ID.
         boolean subscriptionExists = false;
         for (int key : myTickDetails.keySet()) {
             if ((myTickDetails.get(key).getContractDet().m_symbol.equalsIgnoreCase(symbol))

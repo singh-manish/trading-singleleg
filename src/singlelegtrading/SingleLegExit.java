@@ -51,6 +51,7 @@ public class SingleLegExit implements Runnable {
     private String closedPositionsQueueKeyName;
     private int slotNumber;
     private int positionQty = 0;
+    private int mktSubscriptionReqId;
 
     private String entryOrderStatus;
 
@@ -155,6 +156,7 @@ public class SingleLegExit implements Runnable {
         redisConfigurationKey = redisConfigKey;
         exchangeTimeZone = exTZ;
         slotNumber = slotNum;
+        mktSubscriptionReqId = slotNumber;
         miKey = Integer.toString(slotNumber);
 
         myMIDetails = miSignalMap;
@@ -328,15 +330,23 @@ public class SingleLegExit implements Runnable {
                         System.out.println(String.format("%1$tY%1$tm%1$td:%1$tH:%1$tM:%1$tS ", Calendar.getInstance(exchangeTimeZone)) + "IB connection not available to monitor. Exiting the thread for Leg : " + legObj.symbol);
                     }
                 } else {
-                    if (!mktDataSubscribed) {
-                        ibInteractionClient.cancelMktDataSubscription(slotNumber); // In case subscription is still available.. 
-                        if (legObj.futExpiry.equalsIgnoreCase("000000")) {
-                            ibInteractionClient.requestStkMktDataSubscription(slotNumber, legObj.symbol);
-                        } else {
-                            ibInteractionClient.requestFutMktDataSubscription(slotNumber, legObj.symbol, legObj.futExpiry);
-                        }
-                        mktDataSubscribed = true;
-                    }
+                    if (legObj.futExpiry.equalsIgnoreCase("000000")) {
+                        if ( (!mktDataSubscribed) || 
+                               (!(ibInteractionClient.checkStkMktDataSubscription(legObj.symbol))) 
+                           ) {
+                            ibInteractionClient.cancelMktDataSubscription(slotNumber); // In case subscription is still available.. 
+                            mktSubscriptionReqId = ibInteractionClient.requestStkMktDataSubscription(slotNumber, legObj.symbol);
+                            mktDataSubscribed = true;
+                       }                        
+                    } else {
+                        if ( (!mktDataSubscribed) || 
+                               (!(ibInteractionClient.checkFutMktDataSubscription(legObj.symbol, legObj.futExpiry))) 
+                           ) {
+                            ibInteractionClient.cancelMktDataSubscription(slotNumber); // In case subscription is still available.. 
+                            mktSubscriptionReqId = ibInteractionClient.requestFutMktDataSubscription(slotNumber, legObj.symbol, legObj.futExpiry);
+                            mktDataSubscribed = true;
+                       }                       
+                    }                   
                     if (mktDataSubscribed) {
                         updateTickObj();
                         int timeOut = 0;
@@ -378,7 +388,6 @@ public class SingleLegExit implements Runnable {
                 if (updatedTimeStalenessInSeconds > 300) {
                     System.out.println(String.format("%1$tY%1$tm%1$td:%1$tH:%1$tM:%1$tS ", Calendar.getInstance(exchangeTimeZone)) + "Subscribed Rates are getting Stale. Exiting the thread for symbol : " + legObj.symbol);
                     terminate();
-                    //quit = true;
                 }
             }
 
@@ -482,27 +491,32 @@ public class SingleLegExit implements Runnable {
 
     void updateTickObj() {
 
-        tickObj.firstSymbolBidPrice = ibInteractionClient.myTickDetails.get(slotNumber).getSymbolBidPrice();
-        tickObj.firstSymbolAskPrice = ibInteractionClient.myTickDetails.get(slotNumber).getSymbolAskPrice();
-        tickObj.firstSymbolLastPrice = ibInteractionClient.myTickDetails.get(slotNumber).getSymbolLastPrice();
-        tickObj.firstSymbolClosePrice = ibInteractionClient.myTickDetails.get(slotNumber).getSymbolClosePrice();
-        tickObj.lastPriceUpdateTime = ibInteractionClient.myTickDetails.get(slotNumber).getLastPriceUpdateTime();
-        tickObj.closePriceUpdateTime = ibInteractionClient.myTickDetails.get(slotNumber).getClosePriceUpdateTime();
+        if (ibInteractionClient.myTickDetails.containsKey(mktSubscriptionReqId)) {
+            tickObj.firstSymbolBidPrice = ibInteractionClient.myTickDetails.get(mktSubscriptionReqId).getSymbolBidPrice();
+            tickObj.firstSymbolAskPrice = ibInteractionClient.myTickDetails.get(mktSubscriptionReqId).getSymbolAskPrice();
+            tickObj.firstSymbolLastPrice = ibInteractionClient.myTickDetails.get(mktSubscriptionReqId).getSymbolLastPrice();
+            tickObj.firstSymbolClosePrice = ibInteractionClient.myTickDetails.get(mktSubscriptionReqId).getSymbolClosePrice();
+            tickObj.lastPriceUpdateTime = ibInteractionClient.myTickDetails.get(mktSubscriptionReqId).getLastPriceUpdateTime();
+            tickObj.closePriceUpdateTime = ibInteractionClient.myTickDetails.get(mktSubscriptionReqId).getClosePriceUpdateTime();
 
-        if (tickObj.firstSymbolLastPrice > 0) {
-            tickObj.comboLastPrice = tickObj.firstSymbolLastPrice * legObj.lotSize;
-        }
+            if (tickObj.firstSymbolLastPrice > 0) {
+                tickObj.comboLastPrice = tickObj.firstSymbolLastPrice * legObj.lotSize;
+            }
 
-        if ((legObj.qty > 0) && (tickObj.firstSymbolBidPrice > 0)) {
-            // Leg was bought at the the time of taking position. Leg would be sold for squaring off
-            tickObj.comboLastPrice = tickObj.firstSymbolBidPrice * legObj.lotSize;
-        } else if ((legObj.qty < 0) && (tickObj.firstSymbolAskPrice > 0)) {
-            // Leg was shorted at the the time of taking position. Leg would be bought for squaring off
-            tickObj.comboLastPrice = tickObj.firstSymbolAskPrice * legObj.lotSize;
-        }
+            if ((legObj.qty > 0) && (tickObj.firstSymbolBidPrice > 0)) {
+                // Leg was bought at the the time of taking position. Leg would be sold for squaring off
+                tickObj.comboLastPrice = tickObj.firstSymbolBidPrice * legObj.lotSize;
+            } else if ((legObj.qty < 0) && (tickObj.firstSymbolAskPrice > 0)) {
+                // Leg was shorted at the the time of taking position. Leg would be bought for squaring off
+                tickObj.comboLastPrice = tickObj.firstSymbolAskPrice * legObj.lotSize;
+            }
 
-        if (tickObj.firstSymbolClosePrice > 0) {
-            tickObj.comboClosePrice = tickObj.firstSymbolClosePrice * legObj.lotSize;
+            if (tickObj.firstSymbolClosePrice > 0) {
+                tickObj.comboClosePrice = tickObj.firstSymbolClosePrice * legObj.lotSize;
+            }            
+        } else {
+            // resubscribe OR get new marketSubscriptionRequestId in case of existing subscription
+            mktDataSubscribed = false;
         }
     }
 

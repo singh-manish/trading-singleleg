@@ -56,7 +56,8 @@ public class MonitorEntrySignals extends Thread {
     private String duplicateLegAllowed = "yes";
     private String symbolTypeToUse = "FUT"; // STK or FUT or OPT
 
-    private int MAXPOSITIONS = 5;
+    private int MAXLONGPOSITIONS = 2;
+    private int MAXSHORTPOSITIONS = 2;    
     private double MAXCOMBOSPREAD = 300000.0;
 
     private int nextOpenSlotNumber = 6;
@@ -95,12 +96,13 @@ public class MonitorEntrySignals extends Thread {
 
         exchangeHolidayListKeyName = myUtils.getHashMapValueFromRedis(jedisPool, redisConfigurationKey, "EXCHANGEHOLIDAYLISTKEYNAME", false);
 
-        MAXPOSITIONS = Integer.parseInt(myUtils.getHashMapValueFromRedis(jedisPool, redisConfigurationKey, "MAXNUMPAIRPOSITIONS", false));
+        MAXLONGPOSITIONS = Integer.parseInt(myUtils.getHashMapValueFromRedis(jedisPool, redisConfigurationKey, "MAXNUMLONGPOSITIONS", false));
+        MAXSHORTPOSITIONS = Integer.parseInt(myUtils.getHashMapValueFromRedis(jedisPool, redisConfigurationKey, "MAXNUMSHORTPOSITIONS", false));        
         MAXCOMBOSPREAD = Double.parseDouble(myUtils.getHashMapValueFromRedis(jedisPool, redisConfigurationKey, "MAXALLOWEDPAIRSPREAD", false));
 
         nextOpenSlotNumber = getMinimumOpenPositionSlotNumber(openPositionsQueueKeyName, 1);
         // Debug Message
-        System.out.println(String.format("%1$tY%1$tm%1$td:%1$tH:%1$tM:%1$tS ", Calendar.getInstance(myExchangeObj.getExchangeTimeZone())) + "Info : Monitoring Entry Signals for Strategy " + strategyName + " confOrderType " + confOrderType + " nextSlotNum " + nextOpenSlotNumber + " MAXPOSITIONS " + MAXPOSITIONS + " MAXCOMBOSPREAD " + MAXCOMBOSPREAD);
+        System.out.println(String.format("%1$tY%1$tm%1$td:%1$tH:%1$tM:%1$tS ", Calendar.getInstance(myExchangeObj.getExchangeTimeZone())) + "Info : Monitoring Entry Signals for Strategy " + strategyName + " confOrderType " + confOrderType + " nextSlotNum " + nextOpenSlotNumber + " MAXLONGPOSITIONS " + MAXLONGPOSITIONS + " MAXSHORTPOSITIONS " + MAXSHORTPOSITIONS + " MAXCOMBOSPREAD " + MAXCOMBOSPREAD);
 
     }
 
@@ -266,6 +268,8 @@ public class MonitorEntrySignals extends Thread {
         boolean alreadyExisting = false;
         Jedis jedis;
         int numOpenPositions = 0;
+        int numOpenLongPositions = 0;
+        int numOpenShortPositions = 0;
 
         // Go through all open position slots to check for existance of Current Signal        
         jedis = jedisPool.getResource();
@@ -274,9 +278,15 @@ public class MonitorEntrySignals extends Thread {
             Map<String, String> retrieveMap = jedis.hgetAll(openPositionsQueueKeyName);
             for (String keyMap : retrieveMap.keySet()) {
                 // Do Stuff here
-                numOpenPositions++;
+                numOpenPositions++; // update number of total positions               
                 // Since position exists, check if exisitng pairPosition and new pair Position is same
                 TradingObject myTradeObject = new TradingObject(retrieveMap.get(keyMap));
+                if (Integer.parseInt(myTradeObject.getSideAndSize()) < 0 ) {
+                    numOpenShortPositions++;
+                }
+                if (Integer.parseInt(myTradeObject.getSideAndSize()) > 0 ) {
+                    numOpenLongPositions++;
+                }                
                 if ((myTradeObject.getTradingObjectName().matches(newSignalComboName)) && (!duplicateComboAllowed.equalsIgnoreCase("yes"))) {
                     // new position already exists
                     alreadyExisting = true;
@@ -307,12 +317,16 @@ public class MonitorEntrySignals extends Thread {
             }
         }
 
-        if ((alreadyExisting) || (numOpenPositions >= MAXPOSITIONS)) {
+        if ((alreadyExisting) || 
+                (numOpenPositions >= (MAXLONGPOSITIONS + MAXSHORTPOSITIONS)) || 
+                (numOpenLongPositions >= MAXLONGPOSITIONS) || 
+                (numOpenShortPositions >= MAXSHORTPOSITIONS)                
+            ) {
             returnValue = false;
         }
 
         // Debug Message
-        System.out.println("numOpenPositions :" + numOpenPositions + " Max Allowed positions :" + MAXPOSITIONS + " Already Existing Status : " + alreadyExisting + " returning : " + returnValue + "for " + newSignalComboName);
+        System.out.println("numOpenLongPositions :" + numOpenLongPositions + " Max Allowed LONG positions :" + MAXLONGPOSITIONS + "numOpenShortPositions :" + numOpenShortPositions + " Max Allowed SHORT positions :" + MAXSHORTPOSITIONS + " Already Existing Status : " + alreadyExisting + " returning : " + returnValue + "for " + newSignalComboName);
 
         return (returnValue);
     }
@@ -336,7 +350,7 @@ public class MonitorEntrySignals extends Thread {
                     // new position has been trades in past. Apply moratorium period
                     lastTradeTimeStamp = myTradeObject.getExitTimeStamp();
                     // exit Time stamp of past trade occurs in the same day as new proposed entry
-                    // make returnValue false if exit timestamp of existing position and now/new position is < 37 bars i.e. one trading day equivalent
+                    // make returnValue false if exit timestamp of existing position and now/new position is less than defined reentrydelay/moratorium i.e. one trading day equivalent
                     int elapsedTradingMinutes = 10 * myUtils.calcElapsedBars(jedisPool, lastTradeTimeStamp, entryTimeStamp, myExchangeObj, exchangeHolidayListKeyName, false);
                     if (elapsedTradingMinutes <= minimumMoratoriumForPosition) {
                         returnValue = false;
@@ -444,7 +458,8 @@ public class MonitorEntrySignals extends Thread {
             if (entrySignalReceived != null) {
                 System.out.println(String.format("%1$tY%1$tm%1$td:%1$tH:%1$tM:%1$tS ", Calendar.getInstance(myExchangeObj.getExchangeTimeZone())) + "Info : Received Entry Signal as : " + entrySignalReceived);
                 // Read the Maximum Possible Positions
-                MAXPOSITIONS = Integer.parseInt(myUtils.getHashMapValueFromRedis(jedisPool, redisConfigurationKey, "MAXNUMPAIRPOSITIONS", false));
+                MAXLONGPOSITIONS = Integer.parseInt(myUtils.getHashMapValueFromRedis(jedisPool, redisConfigurationKey, "MAXNUMLONGPOSITIONS", false));
+                MAXSHORTPOSITIONS = Integer.parseInt(myUtils.getHashMapValueFromRedis(jedisPool, redisConfigurationKey, "MAXNUMSHORTPOSITIONS", false));                
                 // Read the Max Allowable apread for pair
                 MAXCOMBOSPREAD = Double.parseDouble(myUtils.getHashMapValueFromRedis(jedisPool, redisConfigurationKey, "MAXALLOWEDPAIRSPREAD", false));
                 // Read the Maximun Number of Permissible Entries in a day including open positions at start of the day

@@ -290,7 +290,6 @@ public class SingleLegEntry extends Thread {
                 System.out.println(String.format("%1$tY%1$tm%1$td:%1$tH:%1$tM:%1$tS ", Calendar.getInstance(exchangeTimeZone)) + "Please Check Order Status manually as entry Order initiated but did not receive Confirmation for Orders filling for Order id " + legOrderId);
             }
         }
-
     }
 
     @Override
