@@ -263,29 +263,29 @@ public class MonitorEntrySignals extends Thread {
         return (returnValue);
     }
 
-    boolean checkExistingOpenPositions(String openPositionsQueueKeyName, String entryTimeStamp, String newSignalComboName) {
+    boolean checkExistingOpenPositions(String openPositionsQueueKeyName, String entryTimeStamp, String newSignalComboName, String sideAndSize) {
+
         boolean returnValue = true;
         boolean alreadyExisting = false;
         Jedis jedis;
-        int numOpenPositions = 0;
         int numOpenLongPositions = 0;
         int numOpenShortPositions = 0;
 
+        int side = Integer.parseInt(sideAndSize);
+        
         // Go through all open position slots to check for existance of Current Signal        
         jedis = jedisPool.getResource();
         try {
             // retrieve open position map from redis  
             Map<String, String> retrieveMap = jedis.hgetAll(openPositionsQueueKeyName);
             for (String keyMap : retrieveMap.keySet()) {
-                // Do Stuff here
-                numOpenPositions++; // update number of total positions               
-                // Since position exists, check if exisitng pairPosition and new pair Position is same
+                // Do Stuff here             
                 TradingObject myTradeObject = new TradingObject(retrieveMap.get(keyMap));
                 if (Integer.parseInt(myTradeObject.getSideAndSize()) < 0 ) {
-                    numOpenShortPositions++;
+                    numOpenShortPositions++;  // update number of Open Short positions
                 }
                 if (Integer.parseInt(myTradeObject.getSideAndSize()) > 0 ) {
-                    numOpenLongPositions++;
+                    numOpenLongPositions++; // update number of Open Long positions
                 }                
                 if ((myTradeObject.getTradingObjectName().matches(newSignalComboName)) && (!duplicateComboAllowed.equalsIgnoreCase("yes"))) {
                     // new position already exists
@@ -317,16 +317,18 @@ public class MonitorEntrySignals extends Thread {
             }
         }
 
-        if ((alreadyExisting) || 
-                (numOpenPositions >= (MAXLONGPOSITIONS + MAXSHORTPOSITIONS)) || 
-                (numOpenLongPositions >= MAXLONGPOSITIONS) || 
-                (numOpenShortPositions >= MAXSHORTPOSITIONS)                
+        if ((alreadyExisting) ||
+                ((side > 0) && (numOpenLongPositions >= MAXLONGPOSITIONS)) || 
+                ((side < 0) && (numOpenShortPositions >= MAXSHORTPOSITIONS))                
             ) {
             returnValue = false;
         }
 
         // Debug Message
-        System.out.println("numOpenLongPositions :" + numOpenLongPositions + " Max Allowed LONG positions :" + MAXLONGPOSITIONS + "numOpenShortPositions :" + numOpenShortPositions + " Max Allowed SHORT positions :" + MAXSHORTPOSITIONS + " Already Existing Status : " + alreadyExisting + " returning : " + returnValue + "for " + newSignalComboName);
+        System.out.println("numOpenLongPositions : " + numOpenLongPositions + " against Allowed LONG positions : " + MAXLONGPOSITIONS);
+        System.out.println("numOpenShortPositions : " + numOpenShortPositions + " against Allowed SHORT positions : " + MAXSHORTPOSITIONS);
+        System.out.println("Already Existing Status : " + alreadyExisting);
+        System.out.println("Finally returning (true is allow taking positions. false is do not allow) : " + returnValue + " for " + newSignalComboName + " for Long/Short " + side);
 
         return (returnValue);
     }
@@ -479,7 +481,7 @@ public class MonitorEntrySignals extends Thread {
                 if ((nextOpenSlotNumber <= MAXNUMENTRIESINADAY)
                         && withinEntryOrderTimeRange(entrySignal[TradingObject.ENTRY_TIMESTAMP_INDEX])
                         && withinStipulatedSpreadRange(entrySignal[TradingObject.ENTRY_SPREAD_INDEX])
-                        && checkExistingOpenPositions(openPositionsQueueKeyName, entrySignal[TradingObject.ENTRY_TIMESTAMP_INDEX], entrySignal[TradingObject.NAME_INDEX])
+                        && checkExistingOpenPositions(openPositionsQueueKeyName, entrySignal[TradingObject.ENTRY_TIMESTAMP_INDEX], entrySignal[TradingObject.NAME_INDEX], entrySignal[TradingObject.SIDE_SIZE_INDEX])
                         && checkLastTradeTimeStamp(closedPositionsQueueKeyName, entrySignal[TradingObject.ENTRY_TIMESTAMP_INDEX], entrySignal[TradingObject.NAME_INDEX])
                         && notBlackListed(blackListedSymbols, entrySignal[TradingObject.NAME_INDEX])
                         && checkIfLongOrShortEntryAllowed(allowLongIndicator, allowShortIndicator, entrySignal[TradingObject.SIDE_SIZE_INDEX])
