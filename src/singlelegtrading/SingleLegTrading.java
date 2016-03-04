@@ -130,6 +130,10 @@ public class SingleLegTrading {
             MonitorEntrySignals monitorEntrySignalsQueue = new MonitorEntrySignals("MonitoringEntrySignalsThread", jedisPool, redisConfigurationKey, myUtils, myExchangeObj, myComboTradingSystem.ibInteractionClient,  debugFlag);
             monitorEntrySignalsQueue.start();
 
+            // Spawn a thread to monitor EOD entry/exit signals queue
+            MonitorEODSignals monitorEODEntryExitSignalsQueue = new MonitorEODSignals("MonitoringEODEntryExitSignalsThread", jedisPool, redisConfigurationKey, myUtils, myExchangeObj, myComboTradingSystem.ibInteractionClient,  debugFlag);
+            monitorEODEntryExitSignalsQueue.start();
+            
             // Spawn a thread to read the current open positions from Redis queue
             // For each open position, spawn another monitoring thread is spawned.
             MonitorOpenPositions4Exit monitorOpenPositionsQueue = new MonitorOpenPositions4Exit("MonitoringOpenPositionsForExitThread", jedisPool, redisConfigurationKey, myUtils, myExchangeObj, myComboTradingSystem.ibInteractionClient, myComboTradingSystem.myMIDetails, debugFlag);

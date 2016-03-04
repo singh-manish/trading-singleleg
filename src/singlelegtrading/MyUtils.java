@@ -664,7 +664,8 @@ public class MyUtils {
 
         Jedis jedis;
         String openPositionsQueueKeyName = getHashMapValueFromRedis(jedisPool, redisConfigurationKey, "OPENPOSITIONSQUEUE", debugFlag);
-        int maxNumPositions = Integer.parseInt(getHashMapValueFromRedis(jedisPool, redisConfigurationKey, "MAXNUMPAIRPOSITIONS", debugFlag));
+        int maxNumPositions = Integer.parseInt(getHashMapValueFromRedis(jedisPool, redisConfigurationKey, "MAXNUMLONGPOSITIONS", debugFlag))
+                + Integer.parseInt(getHashMapValueFromRedis(jedisPool, redisConfigurationKey, "MAXNUMSHORTPOSITIONS", debugFlag));
         if (debugFlag) {
             System.out.println(" Maximum Allowed Positions " + maxNumPositions);
         }

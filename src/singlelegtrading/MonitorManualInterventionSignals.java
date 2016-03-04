@@ -44,7 +44,7 @@ public class MonitorManualInterventionSignals extends Thread {
 
     private MyUtils myUtils;
 
-    private String strategyName = "pairstr01";
+    private String strategyName = "singlestr01";
     private String manualInterventionSignalsQueueKeyName = "INRSTR01MANUALINTERVENTIONS";
     private String confOrderType = "MARKET";
 
@@ -222,13 +222,21 @@ public class MonitorManualInterventionSignals extends Thread {
 
     }
 
-    void setStrategyLevelMaxPositionSize(String targetValue) {
-        if (myUtils.checkIfExistsHashMapField(jedisPool, redisConfigurationKey, "MAXNUMPAIRPOSITIONS", false)) {
+    void setStrategyLevelMaxLongPositionSize(String targetValue) {
+        if (myUtils.checkIfExistsHashMapField(jedisPool, redisConfigurationKey, "MAXNUMLONGPOSITIONS", false)) {
             Jedis jedis = jedisPool.getResource();
-            jedis.hset(redisConfigurationKey, "MAXNUMPAIRPOSITIONS", targetValue);
+            jedis.hset(redisConfigurationKey, "MAXNUMLONGPOSITIONS", targetValue);
             jedisPool.returnResource(jedis);
         }
     }
+    
+    void setStrategyLevelMaxShortPositionSize(String targetValue) {
+        if (myUtils.checkIfExistsHashMapField(jedisPool, redisConfigurationKey, "MAXNUMSHORTPOSITIONS", false)) {
+            Jedis jedis = jedisPool.getResource();
+            jedis.hset(redisConfigurationKey, "MAXNUMSHORTPOSITIONS", targetValue);
+            jedisPool.returnResource(jedis);
+        }
+    }    
 
     void setStrategyLevelMinZScore(String targetValue) {
         if (myUtils.checkIfExistsHashMapField(jedisPool, redisConfigurationKey, "MINZSCORE", false)) {
@@ -286,7 +294,7 @@ public class MonitorManualInterventionSignals extends Thread {
                 setTradeLevelSquareOffAllOpenPositions();
                 break;
             case 102:
-                setStrategyLevelMaxPositionSize(targetValue);
+                setStrategyLevelMaxLongPositionSize(targetValue);
                 break;
             case 103:
                 setStrategyLevelMinZScore(targetValue);
@@ -306,6 +314,9 @@ public class MonitorManualInterventionSignals extends Thread {
             case 108:
                 setTradeLevelStopMonitoringAllOpenPositions();
                 break;
+            case 109:
+                setStrategyLevelMaxShortPositionSize(targetValue);
+                break;                
             default:
                 break;
         }

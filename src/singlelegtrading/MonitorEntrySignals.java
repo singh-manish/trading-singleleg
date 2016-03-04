@@ -474,7 +474,7 @@ public class MonitorEntrySignals extends Thread {
                 String allowShortIndicator = myUtils.getHashMapValueFromRedis(jedisPool, redisConfigurationKey, "ALLOWSHORTENTRY", false);
                 int legSizeMultiple = Integer.parseInt(myUtils.getHashMapValueFromRedis(jedisPool, redisConfigurationKey, "LEGSIZEMULTIPLE", false));
 
-                String[] entrySignal = entrySignalReceived.split(",");
+                String[] entrySignal = entrySignalReceived.split(",");                
                 // check if current time is within stipulated entry order time range and not stale by more than 5 minutes.
                 // check if spread is not more than stipulated spread (say 200000 INR for NSE
                 // check if the existing pair does not exist and there is space for Taking up the position, then enter position
