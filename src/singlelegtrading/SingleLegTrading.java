@@ -105,7 +105,7 @@ public class SingleLegTrading {
         TimeZone.setDefault(myExchangeObj.getExchangeTimeZone());
         // Consolidate all open positions to serial from first position        
         myUtils.defragmentOpenPositionsQueue(jedisPool, redisConfigurationKey, true);
-
+                
         if ((!myUtils.fallsOnExchangeHoliday("Exchange is closed today", myUtils.getKeyValueFromRedis(jedisPool, exchangeHolidayListKeyName, false), Calendar.getInstance(myExchangeObj.getExchangeTimeZone()), debugFlag))) {
             // Check if current time is outside Exchange Operating hours, then keep waiting for exchange to open
 
@@ -119,9 +119,12 @@ public class SingleLegTrading {
 
             if (debugFlag) {
                 //myComboTradingSystem.ibInteractionClient.requestExecutionDetailsHistorical(1,31);
-                System.out.println(" OrderID field " + ibOrderIDKeyName + " has been set for next Order Id as : " + myUtils.getKeyValueFromRedis(jedisPool, ibOrderIDKeyName, false));
+                System.out.println(String.format("%1$tY%1$tm%1$td:%1$tH:%1$tM:%1$tS ", Calendar.getInstance(myExchangeObj.getExchangeTimeZone())) + " OrderID field " + ibOrderIDKeyName + " has been set for next Order Id as : " + myUtils.getKeyValueFromRedis(jedisPool, ibOrderIDKeyName, false));                
             }
 
+            //Get order details of executed order from IB to redis hashmap - will help construct reports anytime irrespective of IB being available or not  
+            myUtils.getOrderDetails2LocalDB(jedisPool, redisConfigurationKey, myComboTradingSystem.ibInteractionClient, true);
+            
             // Spawn a thread to monitor the manual intervention signals queue
             MonitorManualInterventionSignals monitorManualInterventionSignalsQueue = new MonitorManualInterventionSignals("MonitoringManualInterventionsSignalsThread", jedisPool, redisConfigurationKey, myUtils, myExchangeObj, myComboTradingSystem.myMIDetails, debugFlag);
             monitorManualInterventionSignalsQueue.start();
@@ -140,7 +143,7 @@ public class SingleLegTrading {
             monitorOpenPositionsQueue.start();
 
             // Spawn a thread to read the current open positions from Redis queue
-            // For each open position, if order status is not updated, try to update it using execDetails.
+            // For each open position, if order status is "not completed Status", then try to update it using execDetails.
             MonitorOpenPositions4OrderCompletionStatus monitorOpenPositions4OrderStatus = new MonitorOpenPositions4OrderCompletionStatus("MonitoringOpenPositionsForOrderCompletionThread", jedisPool, redisConfigurationKey, myUtils, myExchangeObj, myComboTradingSystem.ibInteractionClient, debugFlag);
             monitorOpenPositions4OrderStatus.start();
             
@@ -156,9 +159,13 @@ public class SingleLegTrading {
                         System.out.println("Reached End of Day at :" + String.format("%1$tY%1$tm%1$td%1$tH%1$tM%1$tS", timeNow));
                     }
                 }
-                // Wait for three minutes before next round of checking for exchange closure
-                myUtils.waitForNSeconds(120);
+                // Wait for two minutes before next round of checking for exchange closure                
+                if (!exitNow) {
+                    myUtils.waitForNSeconds(120);                
+                }
             }
+            //Get order details of executed order from IB to redis hashmap - will help construct reports anytime irrespective of IB being available or not
+            myUtils.getOrderDetails2LocalDB(jedisPool, redisConfigurationKey, myComboTradingSystem.ibInteractionClient, true);
             // Disconnect IB 
             myComboTradingSystem.ibInteractionClient.disconnectFromIB();
         }

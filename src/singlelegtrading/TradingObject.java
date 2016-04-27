@@ -60,6 +60,17 @@ public class TradingObject {
 
     private String[] tradeObjectStructure;
 
+    // Index Values for contractStructure
+    // contractStructure is <underlyingSymbol>_<lotSize>_<contractType>_<optionType>_<optionStrike>
+    // e.g. SBIN_300_STK
+    // e.g. NIFTY50_75_FUT
+    // e.g. NIFTY50_75_OPT_PUT_7500.0 OR NIFTY50_75_OPT_CALL_8500.0    
+    public static final int CONTRACT_STRUCT_UNDERLYING_INDEX = 0;
+    public static final int CONTRACT_STRUCT_LOTSIZE_INDEX = 1;
+    public static final int CONTRACT_STRUCT_TYPE_INDEX = 2;
+    public static final int CONTRACT_STRUCT_OPTIONRIGHT_INDEX = 3;
+    public static final int CONTRACT_STRUCT_OPTIONSTRIKE_INDEX = 4;    
+
     TradingObject(String incomingTradeObject) {
 
         tradeObjectStructure = new String[MAX_NUM_ELEMENTS];
@@ -67,7 +78,9 @@ public class TradingObject {
         if (incomingTradeObject.length() > 0) {
             String[] tempTradeObjectStructure = incomingTradeObject.split(",");
             for (int index = 0; index < tempTradeObjectStructure.length; index++) {
-                tradeObjectStructure[index] = tempTradeObjectStructure[index];
+                if (index < MAX_NUM_ELEMENTS) {
+                    tradeObjectStructure[index] = tempTradeObjectStructure[index];                    
+                }
             }
         }
     }
@@ -190,6 +203,10 @@ public class TradingObject {
         tradeObjectStructure[UPPER_BREACH_INDEX] = myDf.format(Double.valueOf(newBreach));
     }
 
+    public void setEntryStdDev(double newEntryStdDev) {
+        tradeObjectStructure[ENTRY_STDDEV_INDEX] = Double.toString(newEntryStdDev);
+    }
+
     public void setLastKnownSpread(double newSpread) {
         tradeObjectStructure[LAST_KNOWN_SPREAD_INDEX] = Double.toString(newSpread);
     }
@@ -227,14 +244,90 @@ public class TradingObject {
         return (tradeObjectStructure[NAME_INDEX]);
     }
 
-    public String getSideAndSize() {
-        return (tradeObjectStructure[SIDE_SIZE_INDEX]);
-    }
+    public int getSideAndSize() {
+        
+        int sideAndSize = 0; // Default value
+     
+        try {
+            sideAndSize = Integer.parseInt(tradeObjectStructure[SIDE_SIZE_INDEX]);
+        } catch (NumberFormatException | NullPointerException ex) {
+            sideAndSize = 0;
+        }            
+        return (sideAndSize);
+    }        
 
-    public String getComboStructure() {
+    public String getContractStructure() {
+        // contractStructure is <underlyingSymbol>_<lotSize>_<contractType>_<optionType>_<optionStrike>
+        // e.g. SBIN_300_STK
+        // e.g. NIFTY50_75_FUT
+        // e.g. NIFTY50_75_OPT_PUT_7500.0 OR NIFTY50_75_OPT_CALL_8500.0
+        //CONTRACT_STRUCT_UNDERLYING_INDEX = 0;
+        //CONTRACT_STRUCT_LOTSIZE_INDEX = 1;
+        //CONTRACT_STRUCT_TYPE_INDEX = 2;
+        //CONTRACT_STRUCT_OPTIONRIGHT_INDEX = 3;
+        //CONTRACT_STRUCT_OPTIONSTRIKE_INDEX = 4;           
+        
         return (tradeObjectStructure[STRUCTURE_INDEX]);
-    }
+    }   
 
+    public String getContractUnderlyingName() {
+        
+        String underlyingName = "UNDERLYING"; // Default value
+        String[] contractStructure = this.getContractStructure().split("_");
+        if (contractStructure.length >= CONTRACT_STRUCT_UNDERLYING_INDEX) {
+            underlyingName = contractStructure[CONTRACT_STRUCT_UNDERLYING_INDEX];
+        }
+        return (underlyingName);
+    }    
+    
+    public int getContractLotSize() {
+        
+        int lotSize = 0; // Default value
+        String[] contractStructure = this.getContractStructure().split("_");
+        if (contractStructure.length >= CONTRACT_STRUCT_LOTSIZE_INDEX) {          
+            try {
+                lotSize = Integer.parseInt(contractStructure[CONTRACT_STRUCT_LOTSIZE_INDEX]);
+            } catch (NumberFormatException | NullPointerException ex) {
+                lotSize = 0;
+            }            
+        }
+        return (lotSize);
+    }
+    
+    public String getContractType() {
+        
+        String contractType = "FUT"; // Default value
+        String[] contractStructure = this.getContractStructure().split("_");
+        if (contractStructure.length >= CONTRACT_STRUCT_TYPE_INDEX) {
+            contractType = contractStructure[CONTRACT_STRUCT_TYPE_INDEX];
+        }
+        return (contractType);
+    }     
+
+    public String getContractOptionRightType() {
+        
+        String optionRightType = "CALL"; // Default value
+        String[] contractStructure = this.getContractStructure().split("_");
+        if (contractStructure.length >= CONTRACT_STRUCT_OPTIONRIGHT_INDEX) {
+            optionRightType = contractStructure[CONTRACT_STRUCT_OPTIONRIGHT_INDEX];
+        }
+        return (optionRightType);
+    }    
+
+    public double getContractOptionStrike() {
+        
+        double optionStrike = 0.0; // Default value
+        String[] contractStructure = this.getContractStructure().split("_");
+        if (contractStructure.length >= CONTRACT_STRUCT_OPTIONSTRIKE_INDEX) {          
+            try {
+                optionStrike = Double.parseDouble(contractStructure[CONTRACT_STRUCT_OPTIONSTRIKE_INDEX]);
+            } catch (NumberFormatException | NullPointerException ex) {
+                optionStrike = 0.0;
+            }          
+        }
+        return (optionStrike);
+    }
+    
     public String getZScore() {
         return (tradeObjectStructure[ENTRY_ZSCORE_INDEX]);
     }

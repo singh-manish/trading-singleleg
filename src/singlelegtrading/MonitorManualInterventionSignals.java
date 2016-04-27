@@ -70,7 +70,7 @@ public class MonitorManualInterventionSignals extends Thread {
         myMIDetails = miDetails;
 
         // Debug Message
-        System.out.println(" Started Monitoring for Manual Signal for Strategy Name " + strategyName + " queue Name " + manualInterventionSignalsQueueKeyName);
+        System.out.println(String.format("%1$tY%1$tm%1$td:%1$tH:%1$tM:%1$tS ", Calendar.getInstance(myExchangeObj.getExchangeTimeZone())) + " Started Monitoring for Manual Signal for Strategy Name " + strategyName + " queue Name " + manualInterventionSignalsQueueKeyName);
 
     }
 
@@ -340,7 +340,7 @@ public class MonitorManualInterventionSignals extends Thread {
             if (manualInterventionSignalReceived != null) {
 
                 // Debug Message
-                System.out.println(" Received Manual Intervention Signal as " + manualInterventionSignalReceived);
+                System.out.println(String.format("%1$tY%1$tm%1$td:%1$tH:%1$tM:%1$tS ", Calendar.getInstance(myExchangeObj.getExchangeTimeZone())) + " Received Manual Intervention Signal as " + manualInterventionSignalReceived);
 
                 ManualInterventionSignalObject miSignal = new ManualInterventionSignalObject(manualInterventionSignalReceived);
                 // check if current time is within stipulated is not stale by more than 5 minutes for trade level signal.

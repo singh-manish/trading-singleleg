@@ -47,13 +47,15 @@ public class SingleLegEntry extends Thread {
     private int legLotSize;
     private String legPosition; // "BUY" for long. "SELL" for short.
     private String orderTypeToUse; // market, relativewithzeroaslimitwithamountoffset, relativewithmidpointaslimitwithamountoffset, relativewithzeroaslimitwithpercentoffset, relativewithmidpointaslimitwithpercentoffset 
-    private String symbolTypeToUse = "FUT"; // FUT or STK or OPT
+    private String contractTypeToUse = "FUT"; // FUT or STK or OPT
+    private String rightTypeToUse = "CALL"; // "C" or "CALL" or "P" or "PUT" - for options
+    private double strikePriceToUse = 8000.0; // strike price for options - for options    
 
     private int INITIALSTOPLOSSAMOUNT = 20000;
     private int slotNumber = 3;
     private int legSizeMultiple = 1;
 
-    SingleLegEntry(String name, String legInfo, JedisPool redisConnectionPool, IBInteraction ibInterClient, MyUtils utils, String strategyReference, String openPosQueueName, TimeZone exTZ, String confOrderType, int assignedSlotNumber, int stopLossAmount, String symbolType, String exCurrency, int sizeMultiple, boolean debugIndicator) {
+    SingleLegEntry(String name, String legInfo, JedisPool redisConnectionPool, IBInteraction ibInterClient, MyUtils utils, String strategyReference, String openPosQueueName, TimeZone exTZ, String confOrderType, int assignedSlotNumber, int stopLossAmount, String exCurrency, int sizeMultiple, boolean debugIndicator) {
         threadName = name;
         legDetails = legInfo;
         debugFlag = debugIndicator;
@@ -62,23 +64,9 @@ public class SingleLegEntry extends Thread {
         ibInteractionClient = ibInterClient;
         exchangeTimeZone = exTZ;
 
-        symbolTypeToUse = symbolType;
         legSizeMultiple = sizeMultiple;
 
         myUtils = utils;
-
-        if (symbolTypeToUse.equalsIgnoreCase("FUT")) {
-            if (exCurrency.equalsIgnoreCase("inr")) {
-                // for FUT type of action, fut expiry needs to be defined
-                futExpiry = myUtils.getKeyValueFromRedis(jedisPool, "INRFUTCURRENTEXPIRY", false);
-            } else if (exCurrency.equalsIgnoreCase("usd")) {
-                // for FUT type of action, fut expiry needs to be defined
-                futExpiry = myUtils.getKeyValueFromRedis(jedisPool, "USDFUTCURRENTEXPIRY", false);
-            }
-        } else if (symbolTypeToUse.equalsIgnoreCase("STK")) {
-            // for STK type of action, mark futexpiry to 000000
-            futExpiry = "000000";
-        }
 
         strategyName = strategyReference;
         openPositionsQueueKeyName = openPosQueueName;
@@ -87,21 +75,44 @@ public class SingleLegEntry extends Thread {
         INITIALSTOPLOSSAMOUNT = stopLossAmount;
         TimeZone.setDefault(exchangeTimeZone);
 
-        String entrySignal[] = legDetails.split(",");
-        if (Integer.parseInt(entrySignal[TradingObject.SIDE_SIZE_INDEX]) > 0) {
-            String pairStructure[] = entrySignal[TradingObject.STRUCTURE_INDEX].split("_");
-            legName = pairStructure[0];
+        TradingObject myTradeObject = new TradingObject(legDetails);        
+        contractTypeToUse = myTradeObject.getContractType();
+        if (contractTypeToUse.equalsIgnoreCase("FUT")) {
+            if (exCurrency.equalsIgnoreCase("inr")) {
+                // for FUT type of action, fut expiry needs to be defined
+                futExpiry = myUtils.getKeyValueFromRedis(jedisPool, "INRFUTCURRENTEXPIRY", false);
+            } else if (exCurrency.equalsIgnoreCase("usd")) {
+                // for FUT type of action, fut expiry needs to be defined
+                futExpiry = myUtils.getKeyValueFromRedis(jedisPool, "USDFUTCURRENTEXPIRY", false);
+            }
+        } else if (contractTypeToUse.equalsIgnoreCase("OPT")) {
+            if (exCurrency.equalsIgnoreCase("inr")) {
+                // for OPT type of action, fut expiry needs to be defined
+                futExpiry = myUtils.getKeyValueFromRedis(jedisPool, "INROPTCURRENTEXPIRY", false);
+            } else if (exCurrency.equalsIgnoreCase("usd")) {
+                // for OPT type of action, fut expiry needs to be defined
+                futExpiry = myUtils.getKeyValueFromRedis(jedisPool, "USDOPTCURRENTEXPIRY", false);
+            }
+        } else if (contractTypeToUse.equalsIgnoreCase("STK")) {
+            // for STK type of action, mark futexpiry to 000000
+            futExpiry = "000000";
+        }        
+        legName = myTradeObject.getContractUnderlyingName();        
+        if (myTradeObject.getSideAndSize() > 0) {
             legPosition = "BUY";
-            legLotSize = Math.abs(legSizeMultiple * Integer.parseInt(pairStructure[1]) * Integer.parseInt(entrySignal[TradingObject.SIDE_SIZE_INDEX]));
-        } else if (Integer.parseInt(entrySignal[TradingObject.SIDE_SIZE_INDEX]) < 0) {
-            String pairStructure[] = entrySignal[TradingObject.STRUCTURE_INDEX].split("_");
-            legName = pairStructure[0];
+            legLotSize = Math.abs(legSizeMultiple * myTradeObject.getContractLotSize() * myTradeObject.getSideAndSize() );
+        } else if (myTradeObject.getSideAndSize() < 0) {
             legPosition = "SELL";
-            legLotSize = Math.abs(legSizeMultiple * Integer.parseInt(pairStructure[1]) * Integer.parseInt(entrySignal[TradingObject.SIDE_SIZE_INDEX]));
+            legLotSize = Math.abs(legSizeMultiple * myTradeObject.getContractLotSize() * myTradeObject.getSideAndSize());
         } else {
             // TBD - Write error handling code here
+            legPosition = "NONE";
+            legLotSize = 0;            
         }
-
+        if (contractTypeToUse.equalsIgnoreCase("OPT")) {
+            rightTypeToUse = myTradeObject.getContractOptionRightType();
+            strikePriceToUse = myTradeObject.getContractOptionStrike();
+        }
     }
 
     boolean entryOrderCompletelyFilled(int orderId, int maxWaitTime) {
@@ -160,32 +171,35 @@ public class SingleLegEntry extends Thread {
             myTradeObject.setEntryTimeStamp(String.format("%1$tY%1$tm%1$td%1$tH%1$tM%1$tS", Calendar.getInstance(exchangeTimeZone)));
         }
 
-        if (Math.abs(Integer.parseInt(myTradeObject.getSideAndSize())) == 1) {
-            myTradeObject.setSideAndSize(Integer.parseInt(myTradeObject.getSideAndSize()), legSizeMultiple);
+        if (Math.abs(myTradeObject.getSideAndSize()) == 1) {
+            myTradeObject.setSideAndSize(myTradeObject.getSideAndSize(), legSizeMultiple);
         }
 
         if ((comboSpread > 0) || (comboSpread < 0)) {
             // For single leg must have abs function. for multi leg it should not be there.
             myTradeObject.setEntrySpread(comboSpread);
+            // Reset the standard Deviation OR 1% of entry to actual 1% value. 
+            // Entry signal contains approximate value but now actual value is known
+            myTradeObject.setEntryStdDev(Math.abs(Math.round(comboSpread/100)));
         }
 
-        if (Integer.parseInt(myTradeObject.getSideAndSize()) > 0) {
+        if (myTradeObject.getSideAndSize() > 0) {
             myTradeObject.setLowerBreach(
                     Math.round(Float.parseFloat(myTradeObject.getEntrySpread()))
-                    - (Math.abs(Integer.parseInt(myTradeObject.getSideAndSize())) * INITIALSTOPLOSSAMOUNT)
+                    - (Math.abs(myTradeObject.getSideAndSize()) * INITIALSTOPLOSSAMOUNT)
             );
             myTradeObject.setUpperBreach(
                     (int) Math.round(Float.parseFloat(myTradeObject.getEntrySpread()))
-                    + Math.round(Math.abs(Integer.parseInt(myTradeObject.getSideAndSize()) * Float.parseFloat(myTradeObject.getZScore()) * Float.parseFloat(myTradeObject.getEntryStdDev())))
+                    + Math.round(Math.abs(myTradeObject.getSideAndSize() * 2 * Float.parseFloat(myTradeObject.getEntryStdDev())))
             );
-        } else if (Integer.parseInt(myTradeObject.getSideAndSize()) < 0) {
+        } else if (myTradeObject.getSideAndSize() < 0) {
             myTradeObject.setLowerBreach(
                     Math.round(Float.parseFloat(myTradeObject.getEntrySpread()))
-                    + (Math.abs(Integer.parseInt(myTradeObject.getSideAndSize())) * INITIALSTOPLOSSAMOUNT)
+                    + (Math.abs(myTradeObject.getSideAndSize()) * INITIALSTOPLOSSAMOUNT)
             );
             myTradeObject.setUpperBreach(
                     (int) Math.round(Float.parseFloat(myTradeObject.getEntrySpread()))
-                    - Math.round(Math.abs(Integer.parseInt(myTradeObject.getSideAndSize()) * Float.parseFloat(myTradeObject.getZScore()) * Float.parseFloat(myTradeObject.getEntryStdDev())))
+                    - Math.round(Math.abs(myTradeObject.getSideAndSize() * 2 * Float.parseFloat(myTradeObject.getEntryStdDev())))
             );
         }
 
@@ -214,22 +228,38 @@ public class SingleLegEntry extends Thread {
         System.out.println(String.format("%1$tY%1$tm%1$td:%1$tH:%1$tM:%1$tS ", Calendar.getInstance(exchangeTimeZone)) + "Placing following Order - Symbol :" + symbolName + " quantity " + quantity + " expiry " + futExpiry + " mktAction " + mktAction + " orderType " + orderTypeToUse);
 
         if (orderTypeToUse.equalsIgnoreCase("market")) {
-            if (symbolTypeToUse.equalsIgnoreCase("STK")) {
+            if (contractTypeToUse.equalsIgnoreCase("STK")) {
                 // Place order for STK type
                 returnOrderId = ibInteractionClient.placeStkOrderAtMarket(symbolName, quantity, mktAction, strategyName, true);
-            } else if (symbolTypeToUse.equalsIgnoreCase("FUT")) {
+            } else if (contractTypeToUse.equalsIgnoreCase("FUT")) {
                 // Place Order for FUT type
                 returnOrderId = ibInteractionClient.placeFutOrderAtMarket(symbolName, quantity, futExpiry, mktAction, strategyName, true);
+            } else if (contractTypeToUse.equalsIgnoreCase("OPT")) {
+                // Place Order for OPT type
+                if (rightTypeToUse.equalsIgnoreCase("CALL") || rightTypeToUse.equalsIgnoreCase("C")) {
+                    returnOrderId = ibInteractionClient.placeCallOptionOrderAtMarket(symbolName, quantity, futExpiry, strikePriceToUse, mktAction, strategyName, true);
+                } else if (rightTypeToUse.equalsIgnoreCase("PUT") || rightTypeToUse.equalsIgnoreCase("P")) {
+                    returnOrderId = ibInteractionClient.placePutOptionOrderAtMarket(symbolName, quantity, futExpiry, strikePriceToUse, mktAction, strategyName, true);
+                }
             }
         } else if (orderTypeToUse.equalsIgnoreCase("relativewithzeroaslimitwithamountoffset")) {
             double limitPrice = 0.0; // For relative order, Limit price is suggested to be left as zero
             double offsetAmount = 0.0; // zero means it will take default value based on exchange / timezone
-            if (symbolTypeToUse.equalsIgnoreCase("STK")) {
+            if (contractTypeToUse.equalsIgnoreCase("STK")) {
                 // Place order for STK type
                 returnOrderId = ibInteractionClient.placeStkOrderAtRelative(symbolName, quantity, mktAction, strategyName, limitPrice, offsetAmount, true);
-            } else if (symbolTypeToUse.equalsIgnoreCase("FUT")) {
+            } else if (contractTypeToUse.equalsIgnoreCase("FUT")) {
                 // Place Order for FUT type
                 returnOrderId = ibInteractionClient.placeFutOrderAtRelative(symbolName, quantity, futExpiry, mktAction, strategyName, limitPrice, offsetAmount, true);
+            } else if (contractTypeToUse.equalsIgnoreCase("OPT")) {
+                // Place Order for OPT type
+                if (rightTypeToUse.equalsIgnoreCase("CALL") || rightTypeToUse.equalsIgnoreCase("C")) {
+                    // for Options Relative to Market is not supported
+                    returnOrderId = ibInteractionClient.placeCallOptionOrderAtMarket(symbolName, quantity, futExpiry, strikePriceToUse, mktAction, strategyName, true);
+                } else if (rightTypeToUse.equalsIgnoreCase("PUT") || rightTypeToUse.equalsIgnoreCase("P")) {
+                    // for Options Relative to Market is not supported                    
+                    returnOrderId = ibInteractionClient.placePutOptionOrderAtMarket(symbolName, quantity, futExpiry, strikePriceToUse, mktAction, strategyName, true);
+                }
             }
         }
 
@@ -239,21 +269,28 @@ public class SingleLegEntry extends Thread {
     void enterLegPosition() {
 
         System.out.println(String.format("%1$tY%1$tm%1$td:%1$tH:%1$tM:%1$tS ", Calendar.getInstance(exchangeTimeZone)) + "Blocked Slot Number for this trade : " + slotNumber);
-        System.out.println(String.format("%1$tY%1$tm%1$td:%1$tH:%1$tM:%1$tS ", Calendar.getInstance(exchangeTimeZone)) + "Placing following Leg Order Element - Symbol :" + legName + " quantity " + legLotSize + " expiry " + futExpiry + " orderType " + orderTypeToUse);
+        System.out.println(String.format("%1$tY%1$tm%1$td:%1$tH:%1$tM:%1$tS ", Calendar.getInstance(exchangeTimeZone)) + "Placing following Leg Order Element - Symbol :" + legName + " quantity " + legLotSize + " expiry " + futExpiry + " orderType " + orderTypeToUse + " right " + rightTypeToUse + " strike " + strikePriceToUse);
 
         double legSpread = 0.0;
 
         // Place Order and get the order ID
-        if (symbolTypeToUse.equalsIgnoreCase("STK")) {
+        if (contractTypeToUse.equalsIgnoreCase("STK")) {
             // for STK type
             ibInteractionClient.getBidAskPriceForStk(slotNumber + IBInteraction.IBTICKARRAYINDEXOFFSET, legName);
-        } else if (symbolTypeToUse.equalsIgnoreCase("FUT")) {
+        } else if (contractTypeToUse.equalsIgnoreCase("FUT")) {
             // for FUT type
             ibInteractionClient.getBidAskPriceForFut(slotNumber + IBInteraction.IBTICKARRAYINDEXOFFSET, legName, futExpiry);
+        } else if (contractTypeToUse.equalsIgnoreCase("OPT")) {
+            // for OPT type
+            if (rightTypeToUse.equalsIgnoreCase("CALL") || rightTypeToUse.equalsIgnoreCase("C")) {
+                ibInteractionClient.getBidAskPriceForCallOption(slotNumber + IBInteraction.IBTICKARRAYINDEXOFFSET, legName, futExpiry, strikePriceToUse);
+            } else if (rightTypeToUse.equalsIgnoreCase("PUT") || rightTypeToUse.equalsIgnoreCase("P")) {
+                ibInteractionClient.getBidAskPriceForPutOption(slotNumber + IBInteraction.IBTICKARRAYINDEXOFFSET, legName, futExpiry, strikePriceToUse);
+            }            
         }
         int legOrderId = this.myPlaceConfiguredOrder(legName, legLotSize, legPosition);
 
-        System.out.println("Placed Orders - with orderID as : " + legOrderId + " for " + legPosition);
+        System.out.println(String.format("%1$tY%1$tm%1$td:%1$tH:%1$tM:%1$tS ", Calendar.getInstance(exchangeTimeZone)) + "Placed Orders - with orderID as : " + legOrderId + " for " + legPosition);
 
         String bidAskDetails = legName + "_" + ibInteractionClient.myBidAskPriceDetails.get(slotNumber).getSymbolBidPrice() + "_" + ibInteractionClient.myBidAskPriceDetails.get(slotNumber).getSymbolAskPrice();
         // update the Open position queue with order inititated status message
@@ -274,8 +311,15 @@ public class SingleLegEntry extends Thread {
                 // update Redis queue with entered order
                 updateOpenPositionsQueue(openPositionsQueueKeyName, legDetails, "entryorderfilled", legSpread, legOrderId, slotNumber, bidAskDetails);
             } else {
-                ibInteractionClient.requestExecutionDetailsHistorical(legOrderId, 1);
-                myUtils.waitForNSeconds(30);
+                int requestId = ibInteractionClient.getNextRequestId();                
+                ibInteractionClient.requestExecutionDetailsHistorical(requestId, 1);
+                // wait till details are received OR for timeput to happen
+                int timeOut = 0;
+                while ((timeOut < 31)
+                        && (!(ibInteractionClient.requestsCompletionStatus.get(requestId)) ) ) {
+                    myUtils.waitForNSeconds(5);
+                    timeOut = timeOut + 5;
+                }
                 bidAskDetails = legName + "_" + ibInteractionClient.myBidAskPriceDetails.get(slotNumber).getSymbolBidPrice() + "_" + ibInteractionClient.myBidAskPriceDetails.get(slotNumber).getSymbolAskPrice();
                 bidAskDetails = bidAskDetails + "__" + legOrderId + "_" + legName + "_" + ibInteractionClient.myOrderStatusDetails.get(legOrderId).getFilledPrice();
                 System.out.println(String.format("%1$tY%1$tm%1$td:%1$tH:%1$tM:%1$tS ", Calendar.getInstance(exchangeTimeZone)) + "Entry Order leg filled for  Order id " + legOrderId + " order side " + legPosition + " at avg filled price " + ibInteractionClient.myOrderStatusDetails.get(legOrderId).getFilledPrice());

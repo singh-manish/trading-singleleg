@@ -178,10 +178,10 @@ class MyExchangeClass {
 // Define class to store last updated prices, and time of it
 class MyTickObjClass {
 
-    int requestId, symbolLastVolume;
-    double symbolLastPrice, symbolClosePrice, symbolBidPrice, symbolAskPrice;
-    long lastVolumeUpdateTime, lastPriceUpdateTime, closePriceUpdateTime, bidPriceUpdateTime, askPriceUpdateTime;
-    boolean subscriptionStatus;
+    private int requestId, symbolLastVolume;
+    private double symbolLastPrice, symbolClosePrice, symbolBidPrice, symbolAskPrice;
+    private long lastVolumeUpdateTime, lastPriceUpdateTime, closePriceUpdateTime, bidPriceUpdateTime, askPriceUpdateTime;
+    private boolean subscriptionStatus;
     private Contract contractDet = new Contract();
 
     public MyTickObjClass(int requestId) {
@@ -303,8 +303,16 @@ class MyTickObjClass {
         this.subscriptionStatus = subscriptionStatus;
     }
 
+    // Constructor for contract Type STK
+    private void setContractDet(String symbol, String currency, String securityType, String exchange) {
+        this.contractDet.m_symbol = symbol;
+        this.contractDet.m_currency = currency;
+        this.contractDet.m_secType = securityType;
+        this.contractDet.m_exchange = exchange;
+    }
+
     // constructor for contract type FUT
-    public void setContractDet(String symbol, String currency, String securityType, String exchange, String expiry) {
+    private void setContractDet(String symbol, String currency, String securityType, String exchange, String expiry) {
         this.contractDet.m_symbol = symbol;
         this.contractDet.m_currency = currency;
         this.contractDet.m_secType = securityType;
@@ -312,14 +320,41 @@ class MyTickObjClass {
         this.contractDet.m_expiry = expiry;
     }
 
-    // Constructor for contract Type STK
-    public void setContractDet(String symbol, String currency, String securityType, String exchange) {
+    // constructor for contract type OPT
+    private void setContractDet(String symbol, String currency, String securityType, String exchange, String expiry, String rightType, double strikePrice) {
         this.contractDet.m_symbol = symbol;
         this.contractDet.m_currency = currency;
         this.contractDet.m_secType = securityType;
         this.contractDet.m_exchange = exchange;
+        this.contractDet.m_expiry = expiry;
+        this.contractDet.m_right = rightType;
+        this.contractDet.m_strike = strikePrice;
     }
+    
+    // Constructor for contract Type STK
+    public void setContractDetStk(String symbol, String currency, String exchange) {
+        this.setContractDet(symbol, currency, "STK", exchange);
+    }
+    
+    // constructor for contract type FUT
+    public void setContractDetFut(String symbol, String currency, String exchange, String expiry) {
+        this.setContractDet(symbol, currency, "FUT", exchange, expiry);
+    }
+    
+    // constructor for contract type OPT
+    public void setContractDetOpt(String symbol, String currency, String exchange, String expiry, String rightType, double strikePrice) {
+        this.setContractDet(symbol, currency, "OPT", exchange, expiry, rightType, strikePrice);
+    }    
+    
+    // constructor for contract type OPT - Put Option
+    public void setContractDetCallOption(String symbol, String currency, String exchange, String expiry, double strikePrice) {
+        this.setContractDetOpt(symbol, currency, exchange, expiry, "PUT", strikePrice);
+    }        
 
+    // constructor for contract type OPT - Call Option
+    public void setContractDetPutOption(String symbol, String currency, String exchange, String expiry, double strikePrice) {
+        this.setContractDetOpt(symbol, currency, exchange, expiry, "CALL", strikePrice);
+    }            
 }
 
 // Define class to store snapshot of Bid Ask price
@@ -400,26 +435,52 @@ class MyBidAskPriceObjClass {
 class MyOrderStatusObjClass {
 
     private int orderId;
-    private double filledPrice;
+    private double filledPrice, averagePrice, commissionAmount;
     private int remainingQuantity, filledQuantity;
     private long updateTime;
-
+    private String uniqueExecutionId, orderReference;
+    private Contract contractDet = new Contract();
+    
     public MyOrderStatusObjClass(int orderId) {
         this.orderId = orderId;
         this.filledPrice = 0.0;
+        this.averagePrice = 0.0;
+        this.commissionAmount = 0.0;
         this.remainingQuantity = -1;
         this.filledQuantity = 0;
         this.updateTime = -1;
+        this.uniqueExecutionId = "";
+        this.orderReference = "";
     }
 
     public int getOrderId() {
         return this.orderId;
     }
+    
+    public String getUniqueExecutionId() {
+        return this.uniqueExecutionId;
+    } 
+    
+    public String getOrderReference() {
+        return this.orderReference;
+    }      
 
+    public Contract getContractDet() {
+        return this.contractDet;
+    }
+    
     public double getFilledPrice() {
         return this.filledPrice;
     }
 
+    public double getAveragePrice() {
+        return this.averagePrice;
+    }    
+
+    public double getCommissionAmount() {
+        return this.commissionAmount;
+    }    
+    
     public int getRemainingQuantity() {
         return this.remainingQuantity;
     }
@@ -436,10 +497,26 @@ class MyOrderStatusObjClass {
         this.orderId = orderId;
     }
 
+    public void setUniqueExecutionId(String executionId) {
+        this.uniqueExecutionId = executionId;
+    }
+
+    public void setOrderReference(String orderRef) {
+        this.orderReference = orderRef;
+    }    
+       
     public void setFilledPrice(double price) {
         this.filledPrice = price;
     }
 
+    public void setAveragePrice(double price) {
+        this.averagePrice = price;
+    }
+    
+    public void setCommissionAmount(double commissionAmt) {
+        this.commissionAmount = commissionAmt;
+    }
+    
     public void setRemainingQuantity(int quantity) {
         this.remainingQuantity = quantity;
     }
@@ -452,6 +529,10 @@ class MyOrderStatusObjClass {
         this.updateTime = time;
     }
 
+    public void setContractDet(Contract contractDetails) {
+        this.contractDet = contractDetails;
+    }
+    
 }
 
 // Define class to store Manual Intervention Signals
@@ -1129,6 +1210,72 @@ public class MyUtils {
             jedis.hset(queueKeyName, Integer.toString(indexNumber), myTradeObject.getCompleteTradingObjectString());
             jedisPool.returnResource(jedis);            
         }
-    }    
+    }
+    
+    public void getOrderDetails2LocalDB(JedisPool jedisPool, String redisConfigurationKey, IBInteraction ibInteractionClient, boolean debugFlag) {
+
+        int requestId = ibInteractionClient.getNextRequestId();
+        ibInteractionClient.requestExecutionDetailsHistorical(requestId, 30);
+        // wait till details are received OR for timeuut to happen
+        int timeOut = 0;
+        while ((timeOut < 301)
+                && (!(ibInteractionClient.requestsCompletionStatus.get(requestId)) ) ) {
+            waitForNSeconds(5);
+            timeOut = timeOut + 5;
+        }
+
+        Jedis jedis = jedisPool.getResource();
+        try {
+            // retrieve map from redis  
+            Map<String, String> orderId2UniqueExecutionMapping = jedis.hgetAll("ORDERID2UNIQUEEXECUTIONIDMAPPING");
+            Map<String, String> orderExecutionRecords = jedis.hgetAll("IBORDEREXECUTIONRECORDS"); 
+
+            for (int orderId : ibInteractionClient.myOrderStatusDetails.keySet()) {            
+                orderId2UniqueExecutionMapping.put(Integer.toString(orderId), ibInteractionClient.myOrderStatusDetails.get(orderId).getUniqueExecutionId());
+
+                // Form the string to record Execution details in Local DB - Redis in this case
+                String orderExecutionDetails = 
+                        Integer.toString(orderId) + "," +
+                        Double.toString(ibInteractionClient.myOrderStatusDetails.get(orderId).getFilledPrice()) + "," +
+                        Integer.toString(ibInteractionClient.myOrderStatusDetails.get(orderId).getFilledQuantity()) + "," +
+                        Double.toString(ibInteractionClient.myOrderStatusDetails.get(orderId).getAveragePrice()) + "," +
+                        Integer.toString(ibInteractionClient.myOrderStatusDetails.get(orderId).getRemainingQuantity()) + "," +
+                        Double.toString(ibInteractionClient.myOrderStatusDetails.get(orderId).getCommissionAmount()) + "," +
+                        convertTime(ibInteractionClient.myOrderStatusDetails.get(orderId).getUpdateTime()) + "," +
+                        ibInteractionClient.myOrderStatusDetails.get(orderId).getOrderReference() + "," +
+                        ibInteractionClient.myOrderStatusDetails.get(orderId).getContractDet().m_symbol + "," +                        
+                        ibInteractionClient.myOrderStatusDetails.get(orderId).getContractDet().m_secType + "," +
+                        ibInteractionClient.myOrderStatusDetails.get(orderId).getContractDet().m_expiry + "," +
+                        ibInteractionClient.myOrderStatusDetails.get(orderId).getContractDet().m_right + "," +
+                        Double.toString(ibInteractionClient.myOrderStatusDetails.get(orderId).getContractDet().m_strike) + "," +
+                        ibInteractionClient.myOrderStatusDetails.get(orderId).getContractDet().m_secId + "," +
+                        ibInteractionClient.myOrderStatusDetails.get(orderId).getContractDet().m_secIdType + "," +                        
+                        ibInteractionClient.myOrderStatusDetails.get(orderId).getContractDet().m_exchange + "," +
+                        ibInteractionClient.myOrderStatusDetails.get(orderId).getContractDet().m_currency + "," +
+                        ibInteractionClient.myOrderStatusDetails.get(orderId).getContractDet().m_primaryExch + "," +
+                        ibInteractionClient.myOrderStatusDetails.get(orderId).getContractDet().m_localSymbol;                        
+                orderExecutionRecords.put(ibInteractionClient.myOrderStatusDetails.get(orderId).getUniqueExecutionId(), orderExecutionDetails);
+            }
+            jedis.hmset("ORDERID2UNIQUEEXECUTIONIDMAPPING", orderId2UniqueExecutionMapping);
+            jedis.hmset("IBORDEREXECUTIONRECORDS", orderExecutionRecords);
+        } catch (JedisException e) {
+            //if something wrong happen, return it back to the pool
+            if (null != jedis) {
+                jedisPool.returnBrokenResource(jedis);
+                jedis = null;
+            }
+        } finally {
+            //Return the Jedis instance to the pool once finished using it  
+            if (null != jedis) {
+                jedisPool.returnResource(jedis);
+            }
+        }               
+    }
+
+    public String convertTime(long time){
+        Date date = new Date(time);
+        Format format = new SimpleDateFormat("yyyyMMddHHmmss");
+        return format.format(date);
+    }                    
     
 }

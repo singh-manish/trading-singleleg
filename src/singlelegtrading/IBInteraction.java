@@ -52,15 +52,15 @@ public class IBInteraction implements EWrapper {
 
     private Object lockOrderPlacement = new Object();
 
+    public ConcurrentHashMap<Integer, Boolean> requestsCompletionStatus = new ConcurrentHashMap<>();    
     public ConcurrentHashMap<Integer, MyTickObjClass> myTickDetails = new ConcurrentHashMap<Integer, MyTickObjClass>();
-
     public ConcurrentHashMap<Integer, MyBidAskPriceObjClass> myBidAskPriceDetails = new ConcurrentHashMap<Integer, MyBidAskPriceObjClass>();
-
     public ConcurrentHashMap<Integer, MyOrderStatusObjClass> myOrderStatusDetails = new ConcurrentHashMap<Integer, MyOrderStatusObjClass>();
 
     private int debugLevel = 0;
 
     private int initialValidOrderID = -1;
+    private int nextRequestId = 1;
 
     private MyExchangeClass myExchangeObj;
     private double defaultOffsetForRelativeOrder = 0.05;
@@ -76,6 +76,7 @@ public class IBInteraction implements EWrapper {
         orderIDField = orderIDIncrField;
         myUtils = utils;
         myExchangeObj = exchangeObj;
+        nextRequestId = 1;
 
         TimeZone.setDefault(myExchangeObj.getExchangeTimeZone());
 
@@ -88,6 +89,12 @@ public class IBInteraction implements EWrapper {
     }
 
     // Custom functions
+    public int getNextRequestId() {
+        nextRequestId++;
+        return(nextRequestId);
+    }
+    
+    
     public boolean connectToIB(int timeout) {
 
         ibClient.eConnect(myIPAddress, myPortNum, myClientId);
@@ -195,7 +202,7 @@ public class IBInteraction implements EWrapper {
             myTickDetails.put(requestId, new MyTickObjClass(requestId));
             myTickDetails.get(requestId).setRequestId(requestId);
             //(String symbol, String currency, String securityType, String exchange, String expiry)            
-            myTickDetails.get(requestId).setContractDet(symbol, myExchangeObj.getExchangeCurrency(), "STK", myExchangeObj.getExchangeName());
+            myTickDetails.get(requestId).setContractDetStk(symbol, myExchangeObj.getExchangeCurrency(), myExchangeObj.getExchangeName());
             myTickDetails.get(requestId).setSubscriptionStatus(true);
             ibClient.reqMktData(requestId, myTickDetails.get(requestId).getContractDet(), "", false);
             returnRequestId = requestId;
@@ -264,7 +271,7 @@ public class IBInteraction implements EWrapper {
             myTickDetails.put(requestId, new MyTickObjClass(requestId));
             myTickDetails.get(requestId).setRequestId(requestId);
             //(String symbol, String currency, String securityType, String exchange, String expiry)            
-            myTickDetails.get(requestId).setContractDet(symbol, myExchangeObj.getExchangeCurrency(), "FUT", myExchangeObj.getExchangeName(), expiry);
+            myTickDetails.get(requestId).setContractDetFut(symbol, myExchangeObj.getExchangeCurrency(), myExchangeObj.getExchangeName(), expiry);
             myTickDetails.get(requestId).setSubscriptionStatus(true);
             ibClient.reqMktData(requestId, myTickDetails.get(requestId).getContractDet(), "", false);
             returnRequestId = requestId;
@@ -272,6 +279,131 @@ public class IBInteraction implements EWrapper {
         return (returnRequestId);
     } // End of requestFutMktDataSubscription    
 
+    void getBidAskPriceForCallOption(int requestId, String symbol, String expiry, double strikePrice) {
+        
+        String rightType = "CALL";
+        getBidAskPriceForOpt(requestId, symbol, expiry, rightType, strikePrice);
+    }
+    
+    void getBidAskPriceForPutOption(int requestId, String symbol, String expiry, double strikePrice) {
+        
+        String rightType = "PUT";
+        getBidAskPriceForOpt(requestId, symbol, expiry, rightType, strikePrice);        
+    }
+        
+    void getBidAskPriceForOpt(int requestId, String symbol, String expiry, String rightType, double strikePrice) {
+
+        Contract myContract = new Contract();
+        myContract.m_symbol = symbol;
+        myContract.m_secType = "OPT";
+        myContract.m_exchange = myExchangeObj.getExchangeName();
+        myContract.m_currency = myExchangeObj.getExchangeCurrency();
+        myContract.m_expiry = expiry;
+        // Options Specific
+        myContract.m_right = rightType;
+        myContract.m_strike = strikePrice;        
+
+        myBidAskPriceDetails.put(requestId - IBTICKARRAYINDEXOFFSET, new MyBidAskPriceObjClass(requestId - IBTICKARRAYINDEXOFFSET));
+        myBidAskPriceDetails.get(requestId - IBTICKARRAYINDEXOFFSET).setRequestId(requestId - IBTICKARRAYINDEXOFFSET);
+
+        ibClient.reqMktData(requestId, myContract, "", true);
+
+    } // End of getBidAskPriceForOpt    
+
+    void stopGettingBidAskPriceForOpt(int requestID) {
+
+        ibClient.cancelMktData(requestID);
+
+    } // End of stopGettingBidAskPriceForOpt 
+
+    boolean checkCallOptionMktDataSubscription(String symbol, String expiry, double strikePrice) {
+
+        String rightType = "CALL";
+        boolean subscriptionStatus = false;
+        subscriptionStatus = checkOptMktDataSubscription(symbol, expiry, rightType, strikePrice);
+        
+        return(subscriptionStatus);
+    }
+    
+    boolean checkPutOptionMktDataSubscription(String symbol, String expiry, double strikePrice) {
+
+        String rightType = "PUT";
+        boolean subscriptionStatus = false;
+        subscriptionStatus = checkOptMktDataSubscription(symbol, expiry, rightType, strikePrice);
+        
+        return(subscriptionStatus);        
+    }
+        
+    boolean checkOptMktDataSubscription(String symbol, String expiry, String rightType, double strikePrice) {
+
+        // check if existing subscription exists for given symbol
+        // if exists then return true
+        // if subscription does not exist then return false
+        String rights_01 = "C";
+        String rights_02 = "CALL";        
+        if (rightType.equalsIgnoreCase("C") || rightType.equalsIgnoreCase("CALL")) {
+            rights_01 = "C";
+            rights_02 = "CALL";                    
+        } else if (rightType.equalsIgnoreCase("P") || rightType.equalsIgnoreCase("PUT")) {
+            rights_01 = "P";
+            rights_02 = "PUT";            
+        }
+        boolean subscriptionStatus = false;
+        for (int key : myTickDetails.keySet()) {
+            if ((myTickDetails.get(key).getContractDet().m_symbol.equalsIgnoreCase(symbol))
+                    && (myTickDetails.get(key).getContractDet().m_secType.equals("OPT"))
+                    && (myTickDetails.get(key).getContractDet().m_right.equals(rights_01) || myTickDetails.get(key).getContractDet().m_right.equals(rights_02))
+                    && (myTickDetails.get(key).getContractDet().m_strike == strikePrice )                    
+                    && (myTickDetails.get(key).getContractDet().m_expiry.equals(expiry))
+                    && (myTickDetails.get(key).getSubscriptionStatus())) {
+                subscriptionStatus = true;
+            }
+        }
+        return (subscriptionStatus);
+    } // End of checkFutMktDataSubscription    
+    
+    int requestOptMktDataSubscription(int requestId, String symbol, String expiry, String rightType, double strikePrice) {
+
+        int returnRequestId = 0;
+        // check if existing subscription exists for given symbol
+        // if exists then return request ID of subscription.
+        // if subscription does not exist then request one and return request ID.
+        String rights_01 = "C";
+        String rights_02 = "CALL";        
+        if (rightType.equalsIgnoreCase("C") || rightType.equalsIgnoreCase("CALL")) {
+            rights_01 = "C";
+            rights_02 = "CALL";                    
+        } else if (rightType.equalsIgnoreCase("P") || rightType.equalsIgnoreCase("PUT")) {
+            rights_01 = "P";
+            rights_02 = "PUT";            
+        }
+        
+        boolean subscriptionExists = false;
+        for (int key : myTickDetails.keySet()) {
+            if ((myTickDetails.get(key).getContractDet().m_symbol.equalsIgnoreCase(symbol))
+                    && (myTickDetails.get(key).getContractDet().m_secType.equals("OPT"))
+                    && (myTickDetails.get(key).getContractDet().m_right.equals(rights_01) || myTickDetails.get(key).getContractDet().m_right.equals(rights_02))
+                    && (myTickDetails.get(key).getContractDet().m_strike == strikePrice )                    
+                    && (myTickDetails.get(key).getContractDet().m_expiry.equals(expiry))
+                    && (myTickDetails.get(key).getSubscriptionStatus())) {
+                subscriptionExists = true;
+                returnRequestId = key;
+            }
+        }
+
+        if (!(subscriptionExists)) {
+            // subscription does not exist so request one
+            myTickDetails.put(requestId, new MyTickObjClass(requestId));
+            myTickDetails.get(requestId).setRequestId(requestId);
+            //(String symbol, String currency, String securityType, String exchange, String expiry)            
+            myTickDetails.get(requestId).setContractDetOpt(symbol, myExchangeObj.getExchangeCurrency(), myExchangeObj.getExchangeName(), expiry, rightType, strikePrice);
+            myTickDetails.get(requestId).setSubscriptionStatus(true);
+            ibClient.reqMktData(requestId, myTickDetails.get(requestId).getContractDet(), "", false);
+            returnRequestId = requestId;
+        }
+        return (returnRequestId);
+    } // End of requestFutMktDataSubscription    
+    
     void cancelMktDataSubscription(int requestId) {
 
         ibClient.cancelMktData(requestId);
@@ -279,7 +411,7 @@ public class IBInteraction implements EWrapper {
             myTickDetails.get(requestId).setSubscriptionStatus(false);
         }
 
-    } // End of onCancelMktData() 
+    } // End of onCancelMktData()
 
     void requestExecutionDetailsHistorical(int requestId, int numPrevDays) {
 
@@ -289,7 +421,6 @@ public class IBInteraction implements EWrapper {
         String startTime = String.format("%1$tY%1$tm%1$td-00:00:00", startingTimeStamp); // format is - yyyymmdd-hh:mm:ss
 
         ExecutionFilter myFilter = new ExecutionFilter();
-        myFilter.m_clientId = myClientId;
         myFilter.m_exchange = myExchangeObj.getExchangeName();
         myFilter.m_time = startTime;
 
@@ -297,6 +428,7 @@ public class IBInteraction implements EWrapper {
             System.out.println(String.format("%1$tY%1$tm%1$td:%1$tH:%1$tM:%1$tS ", Calendar.getInstance(myExchangeObj.getExchangeTimeZone())) + "requesting execution details for time after " + startTime);
         }
 
+        requestsCompletionStatus.put(requestId, Boolean.FALSE);
         ibClient.reqExecutions(requestId, myFilter);
 
     } // end of requestExecutionDetailsHistorical
@@ -313,12 +445,12 @@ public class IBInteraction implements EWrapper {
         myFilter.m_exchange = myExchangeObj.getExchangeName();
         myFilter.m_time = startTime;
         myFilter.m_symbol = symbol;
-        //myFilter.m_secType = "FUT";
         
         if (requestId > 0) {
             System.out.println(String.format("%1$tY%1$tm%1$td:%1$tH:%1$tM:%1$tS ", Calendar.getInstance(myExchangeObj.getExchangeTimeZone())) + "requesting execution details for time after " + startTime);
         }
 
+        requestsCompletionStatus.put(requestId, Boolean.FALSE);        
         ibClient.reqExecutions(requestId, myFilter);
 
     } // end of requestExecutionDetailsHistorical
@@ -449,7 +581,60 @@ public class IBInteraction implements EWrapper {
 
         return (ibOrderId);
     } // placeFutOrderAtMarket
+        
+    public int placeCallOptionOrderAtMarket(String symbol, int qty, String expiry, double strikePrice, String mktAction, String referenceComments, boolean debugFlag) {
 
+        String rightType = "CALL";
+        int ibOrderId = 0;
+        
+        ibOrderId = placeOptOrderAtMarket(symbol, qty, expiry, rightType, strikePrice, mktAction, referenceComments, debugFlag);
+        
+        return(ibOrderId);
+    }
+    
+    public int placePutOptionOrderAtMarket(String symbol, int qty, String expiry, double strikePrice, String mktAction, String referenceComments, boolean debugFlag) {
+
+        String rightType = "PUT";
+        int ibOrderId = 0;
+        
+        ibOrderId = placeOptOrderAtMarket(symbol, qty, expiry, rightType, strikePrice, mktAction, referenceComments, debugFlag);
+        
+        return(ibOrderId);
+    }    
+
+    public int placeOptOrderAtMarket(String symbol, int qty, String expiry, String rightType, double strikePrice, String mktAction, String referenceComments, boolean debugFlag) {
+
+        int ibOrderId;
+        Contract myContract = new Contract();
+        Order myOrder = new Order();
+
+        myContract.m_symbol = symbol;
+        myContract.m_secType = "OPT";
+        myContract.m_exchange = myExchangeObj.getExchangeName();
+        myContract.m_currency = myExchangeObj.getExchangeCurrency();
+        myContract.m_expiry = expiry;
+        // Following are Option Related Fields
+        myContract.m_right = rightType; // C or CALL or P or PUT
+        myContract.m_strike = strikePrice;        
+
+        myOrder.m_action = mktAction;
+        myOrder.m_totalQuantity = qty;
+        myOrder.m_orderType = "MKT"; // At Market Price
+        //myOrder.m_allOrNone = true; // ALL or None are not supported in NSE
+        myOrder.m_tif = "DAY"; // GTC - Good Till Cancel Order, DAY - Good Till Day
+        myOrder.m_orderRef = referenceComments; // This is waht gets displayed on TWS screen
+        myOrder.m_transmit = true; // STP order i.e. transmit immediately
+        synchronized (lockOrderPlacement) {
+            ibOrderId = myUtils.getNextOrderID(jedisPool, orderIDField, debugFlag);
+            ibClient.placeOrder(ibOrderId, myContract, myOrder);
+            if (debugFlag) {
+                System.out.println(String.format("%1$tY%1$tm%1$td:%1$tH:%1$tM:%1$tS ", Calendar.getInstance(myExchangeObj.getExchangeTimeZone())) + "Placed Market Order for " + symbol + " for " + mktAction + " type OPT " + rightType + " for strike " + strikePrice + " expiry " + expiry + " order ID " + ibOrderId);
+            }
+        }
+
+        return (ibOrderId);
+    } // placeOptOrderAtMarket
+    
     // overridden functions to receive data from IB interface / TWS
     @Override
     public void historicalData(int reqId, String date, double open, double high, double low,
@@ -472,7 +657,7 @@ public class IBInteraction implements EWrapper {
                 System.out.println("askPrice " + price + " tickerId " + tickerId + " Time " + String.format("%1$tY%1$tm%1$td%1$tH%1$tM%1$tS", Calendar.getInstance(myExchangeObj.getExchangeTimeZone())));
             }
         } else if (myTickDetails.containsKey(tickerId)) {
-            if ((myTickDetails.get(tickerId).subscriptionStatus) && (price > 0)) {
+            if ((myTickDetails.get(tickerId).getSubscriptionStatus()) && (price > 0)) {
                 if (field == TickType.CLOSE) {
                     myTickDetails.get(tickerId).setClosePriceUpdateTime(System.currentTimeMillis());
                     myTickDetails.get(tickerId).setSymbolClosePrice(price);
@@ -498,7 +683,7 @@ public class IBInteraction implements EWrapper {
     public void tickSize(int tickerId, int field, int size) {
 
         if (myTickDetails.containsKey(tickerId)) {
-            if (myTickDetails.get(tickerId).subscriptionStatus) {
+            if (myTickDetails.get(tickerId).getSubscriptionStatus()) {
                 if (field == TickType.VOLUME) {
                     myTickDetails.get(tickerId).setLastVolumeUpdateTime(System.currentTimeMillis());
                     myTickDetails.get(tickerId).setSymbolLastVolume(size);
@@ -604,15 +789,19 @@ public class IBInteraction implements EWrapper {
     @Override
     public void execDetails(int orderId, Contract contract, Execution execution) {
 
-        //System.out.println("reqId :" + orderId +" symbol :"+ contract.m_symbol + " expiry :" + contract.m_expiry + " execTime :" + execution.m_time + " avgPrice :" + execution.m_avgPrice + " execOrderId :" + execution.m_orderId + " price :" + execution.m_price + " qty :" + execution.m_cumQty + " numShares :" + execution.m_shares + " orderRef :" + execution.m_orderRef );                        
+        //System.out.println("reqId :" + orderId +" symbol :"+ contract.m_symbol + " expiry :" + contract.m_expiry + " execTime :" + execution.m_time + " avgPrice :" + execution.m_avgPrice + " execOrderId :" + execution.m_orderId + " price :" + execution.m_price + " qty :" + execution.m_cumQty + " numShares :" + execution.m_shares + " orderRef :" + execution.m_orderRef );
         if (!(myOrderStatusDetails.containsKey(execution.m_orderId))) {
             myOrderStatusDetails.put(execution.m_orderId, new MyOrderStatusObjClass(execution.m_orderId));
             myOrderStatusDetails.get(execution.m_orderId).setUpdateTime(System.currentTimeMillis());
         }
         myOrderStatusDetails.get(execution.m_orderId).setOrderId(orderId);
         myOrderStatusDetails.get(execution.m_orderId).setFilledPrice(execution.m_price);
+        myOrderStatusDetails.get(execution.m_orderId).setAveragePrice(execution.m_avgPrice);        
         myOrderStatusDetails.get(execution.m_orderId).setFilledQuantity(execution.m_cumQty);
+        myOrderStatusDetails.get(execution.m_orderId).setUniqueExecutionId(execution.m_execId);
+        myOrderStatusDetails.get(execution.m_orderId).setOrderReference(execution.m_orderRef);        
         myOrderStatusDetails.get(execution.m_orderId).setRemainingQuantity(execution.m_cumQty - execution.m_shares);
+        myOrderStatusDetails.get(execution.m_orderId).setContractDet(contract);       
         try {
             // Convert execution.m_time to long millisecond value yyyyMMddHHmmss
             Date tradeTime = new SimpleDateFormat("yyyyMMddHHmmss").parse(execution.m_time.replace(" ", "").replace(":", ""));
@@ -678,6 +867,7 @@ public class IBInteraction implements EWrapper {
 
     @Override
     public void execDetailsEnd(int reqId) {
+        requestsCompletionStatus.put(reqId, Boolean.TRUE);
     }
 
     @Override
@@ -709,7 +899,12 @@ public class IBInteraction implements EWrapper {
     }
 
     @Override
-    public void commissionReport(CommissionReport commissionReport) {
+    public void commissionReport(CommissionReport commissionReport) {        
+        for (int orderId : myOrderStatusDetails.keySet()) {
+            if (myOrderStatusDetails.get(orderId).getUniqueExecutionId().equalsIgnoreCase(commissionReport.m_execId)) {
+                myOrderStatusDetails.get(orderId).setCommissionAmount(commissionReport.m_commission);
+            }
+        }
     }
 
     @Override

@@ -110,13 +110,14 @@ public class MonitorOpenPositions4OrderCompletionStatus extends Thread {
                             int exitOrderID = Integer.parseInt(myTradeObject.getExitOrderIDs());
                             if (exitOrderID > 0) {
                                 // Get Execution details from IB
-                                String comboStructure[] = myTradeObject.getComboStructure().split("_");
-                                String symbolName = comboStructure[0];
+                                String symbolName = myTradeObject.getContractUnderlyingName();
                                 if (!(ibInteractionClient.myOrderStatusDetails.containsKey(exitOrderID))) {
-                                    ibInteractionClient.requestExecutionDetailsHistorical(exitOrderID, 5, symbolName);
+                                    int requestId = ibInteractionClient.getNextRequestId();
+                                    ibInteractionClient.requestExecutionDetailsHistorical(requestId, 5, symbolName);
                                     // wait till details are received OR for timeput to happen
                                     int timeOut = 0;
                                     while ((timeOut < 300)
+                                            && (!(ibInteractionClient.requestsCompletionStatus.get(requestId)))                                  
                                             && (!(ibInteractionClient.myOrderStatusDetails.containsKey(exitOrderID)))) {
                                         myUtils.waitForNSeconds(20);
                                         timeOut = timeOut + 10;
