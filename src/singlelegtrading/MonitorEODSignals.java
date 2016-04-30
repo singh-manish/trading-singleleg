@@ -57,10 +57,10 @@ public class MonitorEODSignals extends Thread {
     public String exchangeHolidayListKeyName;
     
     public class MyExistingPosition {
-        String symbolName;
+        String symbolName, symbolType; // symbolType would be "STK" or "FUT" or "OPT"
+        String optionRightType = "NA";
         boolean exists;
-        int slotNumber;
-        int positionSideAndSize;
+        int slotNumber, positionSideAndSize;
     }
     
     public class MyEntrySignalParameters {
@@ -204,8 +204,10 @@ public class MonitorEODSignals extends Thread {
             }                    
         }        
 
-        // Debug Messages if any
-        System.out.println(String.format("%1$tY%1$tm%1$td:%1$tH:%1$tM:%1$tS ", Calendar.getInstance(myExchangeObj.getExchangeTimeZone())) + " Within given timeSlot OR not : " + retValue + " timeSlot " + HHMM + " timeSlotHH " + timeSlotHH + " timeSlotMM " + timeSlotMM + " for entry timeStamp as " + entryYYYYMMDDHHMMSS);
+        if (retValue) {
+            // Debug Messages if any
+            System.out.println(String.format("%1$tY%1$tm%1$td:%1$tH:%1$tM:%1$tS ", Calendar.getInstance(myExchangeObj.getExchangeTimeZone())) + " Within given timeSlot OR not : " + retValue + " timeSlot " + HHMM + " timeSlotHH " + timeSlotHH + " timeSlotMM " + timeSlotMM + " for entry timeStamp as " + entryYYYYMMDDHHMMSS);            
+        }
         
         return(retValue);
     }    
@@ -215,7 +217,7 @@ public class MonitorEODSignals extends Thread {
         currentPos.exists = false;
         currentPos.positionSideAndSize = 0;
         currentPos.slotNumber = 0;
-        currentPos.symbolName = "";        
+        currentPos.symbolName = "";
         
         Jedis jedis;
         jedis = jedisPool.getResource();
@@ -238,11 +240,15 @@ public class MonitorEODSignals extends Thread {
                     currentPos.positionSideAndSize = myTradeObject.getSideAndSize();
                     currentPos.slotNumber = Integer.parseInt(keyMap);
                     currentPos.symbolName = myTradeObject.getTradingObjectName();
+                    currentPos.symbolType = myTradeObject.getContractType();
+                    if (myTradeObject.getContractType().equalsIgnoreCase("OPT")) {
+                        currentPos.optionRightType = myTradeObject.getContractOptionRightType();
+                    }
                     // Debug Messages if any
-                    System.out.println(String.format("%1$tY%1$tm%1$td:%1$tH:%1$tM:%1$tS ", Calendar.getInstance(myExchangeObj.getExchangeTimeZone())) + " Found Existing Position " + currentPos.symbolName + " " + currentPos.exists + " " + currentPos.positionSideAndSize + " " + currentPos.slotNumber + " for timeSlot " + timeSlot);
+                    System.out.println(String.format("%1$tY%1$tm%1$td:%1$tH:%1$tM:%1$tS ", Calendar.getInstance(myExchangeObj.getExchangeTimeZone())) + " Found Existing Position " + currentPos.symbolName + " " + currentPos.symbolType + " " + currentPos.optionRightType + " " + currentPos.exists + " " + currentPos.positionSideAndSize + " " + currentPos.slotNumber + " for timeSlot " + timeSlot);
                 }
                 // Debug Messages if any
-                System.out.println(String.format("%1$tY%1$tm%1$td:%1$tH:%1$tM:%1$tS ", Calendar.getInstance(myExchangeObj.getExchangeTimeZone())) + " Position Match Status " + signalSymbolName + " " + keyMap + " " + currentPos.exists + " " + currentPos.positionSideAndSize + " " + currentPos.slotNumber + " for timeSlot " + timeSlot);                
+                //System.out.println(String.format("%1$tY%1$tm%1$td:%1$tH:%1$tM:%1$tS ", Calendar.getInstance(myExchangeObj.getExchangeTimeZone())) + " Position Match Status " + signalSymbolName + " " + keyMap + " " + currentPos.exists + " " + currentPos.positionSideAndSize + " " + currentPos.slotNumber + " for timeSlot " + timeSlot);                                    
             }
         } catch (JedisException e) {
             //if something wrong happen, return it back to the pool
@@ -257,8 +263,7 @@ public class MonitorEODSignals extends Thread {
             }
         }
         // Debug Messages if any
-        System.out.println(String.format("%1$tY%1$tm%1$td:%1$tH:%1$tM:%1$tS ", Calendar.getInstance(myExchangeObj.getExchangeTimeZone())) + "Existing pos Vs New Position " + signalSymbolName + " " + currentPos.exists + " " + currentPos.positionSideAndSize + " " + currentPos.slotNumber);
-        
+        //System.out.println(String.format("%1$tY%1$tm%1$td:%1$tH:%1$tM:%1$tS ", Calendar.getInstance(myExchangeObj.getExchangeTimeZone())) + "Existing pos Vs New Position " + signalSymbolName + " " + currentPos.exists + " " + currentPos.positionSideAndSize + " " + currentPos.slotNumber);        
     }    
 
     void sendUpdateStoplossLimitSignal(String manualInterventionSignalsQueue, int slotNumber) {
@@ -411,26 +416,53 @@ public class MonitorEODSignals extends Thread {
 
         // for taking position, send form the signal and send to entrySignalsQueue
         // for square off, send signal to manual intervention queue
-        if (currentExistingPos.exists) {
-            //if LONG position exists for given symbol then square off if either of RLSIGNAL OR TSISIGNAL are -1
-            if (currentExistingPos.positionSideAndSize > 0) {
-                if ( (signalParam.RLSignal < 0 ) || (signalParam.TSISignal < 0) ) {
-                    sendSquareOffSignal(manualInterventionSignalsQueueKeyName,currentExistingPos.slotNumber);
-                    // if exit is due to RLSignal, then take opposite position after exiting
-                    if ( (signalParam.RLSignal < 0 ) && (signalParam.tradeSide != 0)) {
-                        sendEntrySignal(entrySignalsQueueKeyName, signalParam);                        
-                    }                                                        
+        if ( (currentExistingPos.exists) && 
+                ( (currentExistingPos.symbolType.equalsIgnoreCase("FUT")) || (currentExistingPos.symbolType.equalsIgnoreCase("STK")) ) ) {            
+            if ( signalParam.elementStructure.contains("_FUT") || signalParam.elementStructure.contains("_STK") ) {
+                //if LONG position exists for given symbol then square off if either of RLSIGNAL OR TSISIGNAL are -1
+                if (currentExistingPos.positionSideAndSize > 0) {
+                    if ( (signalParam.RLSignal < 0 ) || (signalParam.TSISignal < 0) ) {
+                        sendSquareOffSignal(manualInterventionSignalsQueueKeyName,currentExistingPos.slotNumber);
+                        // if exit is due to RLSignal, then take opposite position after exiting
+                        if ( (signalParam.RLSignal < 0 ) && (signalParam.tradeSide != 0)) {
+                            sendEntrySignal(entrySignalsQueueKeyName, signalParam);                        
+                        }                                                        
+                    }
                 }
+                //if SHORT position exists for given symbol then square off if either of RLSIGNAL OR TSISIGNAL are +1                        
+                if (currentExistingPos.positionSideAndSize < 0 ) {
+                    if ( (signalParam.RLSignal > 0 ) || (signalParam.TSISignal > 0) ) {
+                        sendSquareOffSignal(manualInterventionSignalsQueueKeyName,currentExistingPos.slotNumber);
+                        // if exit is due to RLSignal, then take do opposite position after exiting
+                        if ( (signalParam.RLSignal > 0 ) && (signalParam.tradeSide != 0)) {
+                            sendEntrySignal(entrySignalsQueueKeyName, signalParam);                        
+                        }                                                                                    
+                    }                                                
+                }                
             }
-            //if SHORT position exists for given symbol then square off if either of RLSIGNAL OR TSISIGNAL are +1                        
-            if (currentExistingPos.positionSideAndSize < 0 ) {
-                if ( (signalParam.RLSignal > 0 ) || (signalParam.TSISignal > 0) ) {
-                    sendSquareOffSignal(manualInterventionSignalsQueueKeyName,currentExistingPos.slotNumber);
-                    // if exit is due to RLSignal, then take do opposite position after exiting
-                    if ( (signalParam.RLSignal > 0 ) && (signalParam.tradeSide != 0)) {
-                        sendEntrySignal(entrySignalsQueueKeyName, signalParam);                        
-                    }                                                                                    
-                }                                                
+        } else if ( (currentExistingPos.exists) && 
+                (currentExistingPos.symbolType.equalsIgnoreCase("OPT")) ) {
+            if ( signalParam.elementStructure.contains("_OPT") ) {
+                //if LONG position exists i.e. it is CALL OPTION then square off if either of RLSIGNAL OR TSISIGNAL are -1
+                if (currentExistingPos.optionRightType.equalsIgnoreCase("CALL") || currentExistingPos.optionRightType.equalsIgnoreCase("C") ) {
+                    if ( (signalParam.RLSignal < 0 ) || (signalParam.TSISignal < 0) ) {
+                        sendSquareOffSignal(manualInterventionSignalsQueueKeyName,currentExistingPos.slotNumber);
+                        // if exit is due to RLSignal, then take opposite position after exiting
+                        if ( (signalParam.RLSignal < 0 ) && (signalParam.tradeSide != 0)) {
+                            sendEntrySignal(entrySignalsQueueKeyName, signalParam);                        
+                        }                                                        
+                    }
+                }
+                //if SHORT position exists i.e. it is PUT OPTION then square off if either of RLSIGNAL OR TSISIGNAL are +1                        
+                if (currentExistingPos.optionRightType.equalsIgnoreCase("PUT") || currentExistingPos.optionRightType.equalsIgnoreCase("P") ) {
+                    if ( (signalParam.RLSignal > 0 ) || (signalParam.TSISignal > 0) ) {
+                        sendSquareOffSignal(manualInterventionSignalsQueueKeyName,currentExistingPos.slotNumber);
+                        // if exit is due to RLSignal, then take do opposite position after exiting
+                        if ( (signalParam.RLSignal > 0 ) && (signalParam.tradeSide != 0)) {
+                            sendEntrySignal(entrySignalsQueueKeyName, signalParam);                        
+                        }                                                                                    
+                    }                                                
+                }                
             }
         } else {
             // since no position for given symbol so take position as per RLSIGNAL
