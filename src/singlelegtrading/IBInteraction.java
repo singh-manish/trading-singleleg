@@ -423,6 +423,7 @@ public class IBInteraction implements EWrapper {
         ExecutionFilter myFilter = new ExecutionFilter();
         myFilter.m_exchange = myExchangeObj.getExchangeName();
         myFilter.m_time = startTime;
+        myFilter.m_clientId = myClientId;
 
         if (requestId > 0) {
             System.out.println(String.format("%1$tY%1$tm%1$td:%1$tH:%1$tM:%1$tS ", Calendar.getInstance(myExchangeObj.getExchangeTimeZone())) + "requesting execution details for time after " + startTime);
@@ -753,10 +754,14 @@ public class IBInteraction implements EWrapper {
         myOrderStatusDetails.get(orderId).setFilledQuantity(filled);
         myOrderStatusDetails.get(orderId).setRemainingQuantity(remaining);
         myOrderStatusDetails.get(orderId).setUpdateTime(System.currentTimeMillis());
+        myOrderStatusDetails.get(orderId).setIBOrderStatus(status);
 
-        if (debugLevel > 4) {
-            System.out.println(String.format("%1$tY%1$tm%1$td:%1$tH:%1$tM:%1$tS ", Calendar.getInstance(myExchangeObj.getExchangeTimeZone())) + "OrderId " + orderId + " status " + status + " filled qty " + filled + " remaining qty " + remaining + " average fill price " + avgFillPrice + " last filled price " + lastFillPrice);
-        }
+
+        System.out.println(String.format("%1$tY%1$tm%1$td:%1$tH:%1$tM:%1$tS ", Calendar.getInstance(myExchangeObj.getExchangeTimeZone())) + 
+                "OrderId " + orderId + " status " + status + 
+                " filled qty " + filled + " remaining qty " + remaining + 
+                " average fill price " + avgFillPrice + 
+                " last filled price " + lastFillPrice);
 
     }
 

@@ -66,7 +66,7 @@ public class SingleLegExit implements Runnable {
         String symbol, futExpiry;
         String contractType, rightType;
         double strikePrice;
-        int legId, lotSize, qty, halfLife;
+        int legId, lotSize, qty;
         String legEntryTimeStamp;
         double legEntrySpread;
 
@@ -77,7 +77,6 @@ public class SingleLegExit implements Runnable {
             legEntryTimeStamp = myLocalTradeObject.getEntryTimeStamp();
             qty = myLocalTradeObject.getSideAndSize();
             legEntrySpread = Double.parseDouble(myLocalTradeObject.getEntrySpread());
-            halfLife = Math.round(Float.parseFloat(myLocalTradeObject.getHalfLife()));
 
             symbol = myLocalTradeObject.getContractUnderlyingName();
             lotSize = Math.abs(myLocalTradeObject.getContractLotSize() * qty);
@@ -137,11 +136,9 @@ public class SingleLegExit implements Runnable {
 
     private double legFilledPrice = 0.0;
     private String bidAskDetails = "";
-    private String strategyExitType = "halflifebased";
     private String orderTypeToUse = "market"; // market, relativewithzeroaslimitwithamountoffset, relativewithmidpointaslimitwithamountoffset, relativewithzeroaslimitwithpercentoffset, relativewithmidpointaslimitwithpercentoffset 
     private double initialStopLoss = 6000.0;
     private double initialTakeProfit = 5000.0;
-    private String fileNameForLimitsStatusUpdates;
     private String miKey;
 
     private ConcurrentHashMap<String, MyManualInterventionClass> myMIDetails;
@@ -172,15 +169,13 @@ public class SingleLegExit implements Runnable {
         strategyName = myUtils.getHashMapValueFromRedis(jedisPool, redisConfigurationKey, "STRATEGYNAME", false);
         openPositionsQueueKeyName = myUtils.getHashMapValueFromRedis(jedisPool, redisConfigurationKey, "OPENPOSITIONSQUEUE", false);
         closedPositionsQueueKeyName = myUtils.getHashMapValueFromRedis(jedisPool, redisConfigurationKey, "CLOSEDPOSITIONSQUEUE", false);
-        strategyExitType = myUtils.getHashMapValueFromRedis(jedisPool, redisConfigurationKey, "EXITSTRATEGYTYPE", false);
         orderTypeToUse = myUtils.getHashMapValueFromRedis(jedisPool, redisConfigurationKey, "EXITORDERTYPE", false);
         initialStopLoss = Double.parseDouble(myUtils.getHashMapValueFromRedis(jedisPool, redisConfigurationKey, "INITIALSTOPLOSSAMOUNT", false));
         initialTakeProfit = Double.parseDouble(myUtils.getHashMapValueFromRedis(jedisPool, redisConfigurationKey, "INITIALTAKEPROFITAMOUNT", false));
         exchangeHolidayListKeyName = myUtils.getHashMapValueFromRedis(jedisPool, redisConfigurationKey, "EXCHANGEHOLIDAYLISTKEYNAME", false);
-        takeProfitGapPercentOnTakeProfitBreach = Double.parseDouble(myUtils.getHashMapValueFromRedis(jedisPool, redisConfigurationKey, "TAKEPROFITGAPPERCENTONTAKEPROFITBREACH", false));;
-        stopLossGapPercentOnTakeProfitBreach = Double.parseDouble(myUtils.getHashMapValueFromRedis(jedisPool, redisConfigurationKey, "STOPLOSSGAPPERCENTONTAKEPROFITBREACH", false));;
+        takeProfitGapPercentOnTakeProfitBreach = Double.parseDouble(myUtils.getHashMapValueFromRedis(jedisPool, redisConfigurationKey, "TAKEPROFITGAPPERCENTONTAKEPROFITBREACH", false));
+        stopLossGapPercentOnTakeProfitBreach = Double.parseDouble(myUtils.getHashMapValueFromRedis(jedisPool, redisConfigurationKey, "STOPLOSSGAPPERCENTONTAKEPROFITBREACH", false));
         
-        String logDirectory = myUtils.getHashMapValueFromRedis(jedisPool, redisConfigurationKey, "LOGDIRECTORY", false);
         if (myUtils.checkIfExistsHashMapField(jedisPool, openPositionsQueueKeyName, Integer.toString(slotNumber), false)) {
             // Since position exists, get position details
             legDetails = myUtils.getHashMapValueFromRedis(jedisPool, openPositionsQueueKeyName, Integer.toString(slotNumber), debugFlag);
@@ -189,12 +184,6 @@ public class SingleLegExit implements Runnable {
             TradingObject myTradeObject = new TradingObject(legDetails);
 
             entryOrderStatus = myTradeObject.getOrderState();
-            if (!(logDirectory.isEmpty())) {
-                fileNameForLimitsStatusUpdates = logDirectory + "/" + strategyName + "/";
-                fileNameForLimitsStatusUpdates = fileNameForLimitsStatusUpdates + myTradeObject.getEntryTimeStamp().substring(0, myTradeObject.getEntryTimeStamp().length() - 2) + "00_ON_" + legObj.symbol + ".csv";
-            } else {
-                fileNameForLimitsStatusUpdates = "";
-            }
 
             rangeLimitObj = new MyRangeActionObjClass(slotNumber, Long.parseLong(myTradeObject.getLastUpdatedTimeStamp()));
 
@@ -239,7 +228,6 @@ public class SingleLegExit implements Runnable {
 
         positionQty = legObj.qty;
         tickObj = new MyTickObjClass();
-
     }
     
     public void terminate() {
@@ -307,10 +295,10 @@ public class SingleLegExit implements Runnable {
             if ((myMIDetails.containsKey(miKey)) && 
                     (myMIDetails.get(miKey).getActionIndicator() == MyManualInterventionClass.UPDATESTOPLOSS) && 
                     (!quit)) {
-                double tempLimit;
+                double adjAmount;
                 try {
-                    tempLimit = Double.parseDouble(myMIDetails.get(miKey).getTargetValue());
-                    rangeLimitObj.stopLossLimit = tempLimit;
+                    adjAmount = Double.parseDouble(myMIDetails.get(miKey).getTargetValue());
+                    adjustStopLossLimit(adjAmount);
                     myMIDetails.get(miKey).setActionIndicator(MyManualInterventionClass.DEFAULT);                    
                 } catch (Exception ex) {
                 }
@@ -319,10 +307,10 @@ public class SingleLegExit implements Runnable {
             if ((myMIDetails.containsKey(miKey)) && 
                     (myMIDetails.get(miKey).getActionIndicator() == MyManualInterventionClass.UPDATETAKEPROFIT) && 
                     (!quit)) {
-                double tempLimit;
+                double adjAmount;
                 try {
-                    tempLimit = Double.parseDouble(myMIDetails.get(miKey).getTargetValue());
-                    rangeLimitObj.takeProfitLimit = tempLimit;
+                    adjAmount = Double.parseDouble(myMIDetails.get(miKey).getTargetValue());
+                    adjustTakeProfitLimit(adjAmount);
                     myMIDetails.get(miKey).setActionIndicator(MyManualInterventionClass.DEFAULT);                    
                 } catch (Exception ex) {
                 }
@@ -333,7 +321,7 @@ public class SingleLegExit implements Runnable {
                     // Even After waiting 180 seconds Connection is not available. Quit now...
                     terminate();
                     if (debugFlag) {
-                        System.out.println(String.format("%1$tY%1$tm%1$td:%1$tH:%1$tM:%1$tS ", Calendar.getInstance(exchangeTimeZone)) + "IB connection not available to monitor. Exiting the thread for Leg : " + legObj.symbol);
+                        System.out.println(String.format("%1$tY%1$tm%1$td:%1$tH:%1$tM:%1$tS ", Calendar.getInstance(exchangeTimeZone)) + "IB connection not available to monitor. Exiting the thread for Leg : " + legObj.symbol + "_" + legObj.contractType);
                     }
                 } else {
                     if (legObj.contractType.equalsIgnoreCase("STK")) {
@@ -401,32 +389,27 @@ public class SingleLegExit implements Runnable {
             if ((Integer.parseInt(String.format("%1$tS", timeNow)) % 30 == 5) && (rangeLimitObj.updatedtime > 0)) {
                 long updatedTimeStalenessInSeconds = (System.currentTimeMillis() - rangeLimitObj.updatedtime) / 1000;
                 if (updatedTimeStalenessInSeconds > 300) {
-                    System.out.println(String.format("%1$tY%1$tm%1$td:%1$tH:%1$tM:%1$tS ", Calendar.getInstance(exchangeTimeZone)) + "Subscribed Rates are getting Stale. Exiting the thread for symbol : " + legObj.symbol);
+                    System.out.println(String.format("%1$tY%1$tm%1$td:%1$tH:%1$tM:%1$tS ", Calendar.getInstance(exchangeTimeZone)) + "Subscribed Rates are getting Stale for legId " + slotNumber + " contract " + legObj.symbol + "_" + legObj.contractType + "Exiting the thread now.");
                     terminate();
                 }
             }
 
             if ((debugFlag)
-                    && (!(fileNameForLimitsStatusUpdates.isEmpty()))
-                    && (Integer.parseInt(String.format("%1$tS", timeNow)) % 30 == 1)
+                    && (Integer.parseInt(String.format("%1$tM", timeNow)) % 10 == 0)
+                    && (Integer.parseInt(String.format("%1$tS", timeNow)) == 0)                    
                     && (tickObj.firstSymbolLastPrice > 0)) {
-                // Write to file the data
+                // print heartbeat
                 String timeOne = new java.text.SimpleDateFormat("yyyyMMddHHmmss").format(rangeLimitObj.updatedtime);
-                String outputToWrite = rangeLimitObj.pairId
-                        + "," + timeOne
-                        + "," + String.format("%1$tY%1$tm%1$td%1$tH%1$tM%1$tS", timeNow)
-                        + "," + rangeLimitObj.stopLossLimitBreached
-                        + "," + rangeLimitObj.takeProfitLimitBreached
-                        + "," + rangeLimitObj.deviation
-                        + "," + rangeLimitObj.stopLossLimit
-                        + "," + rangeLimitObj.takeProfitLimit
-                        + "," + rangeLimitObj.stopLossBreachActionStatus
-                        + "," + rangeLimitObj.takeProfitBreachActionStatus
-                        + "," + tickObj.comboLastPrice
-                        + "," + tickObj.comboClosePrice
-                        + ","
-                        + "," + positionQty;
-                updateLimitsStatusToFile(fileNameForLimitsStatusUpdates, outputToWrite);
+                String outputToWrite = legObj.legId
+                        + " : " + String.format("%1$tY%1$tm%1$td%1$tH%1$tM%1$tS", timeNow)
+                        + " : " + legObj.symbol + "_" + legObj.contractType
+                        + " : " + positionQty  
+                        + " : " + rangeLimitObj.stopLossLimit
+                        + " : " + tickObj.comboLastPrice
+                        + " : " + tickObj.comboClosePrice                     
+                        + " : " + rangeLimitObj.takeProfitLimit
+                        + " : " + timeOne;
+                System.out.println(outputToWrite);
             }
         }
 
@@ -435,26 +418,52 @@ public class SingleLegExit implements Runnable {
         ibInteractionClient.cancelMktDataSubscription(slotNumber); // In case subscription is still available..
 
         if (debugFlag) {
-            System.out.println(String.format("%1$tY%1$tm%1$td:%1$tH:%1$tM:%1$tS ", Calendar.getInstance(exchangeTimeZone)) + "Info : Stopped Monitoring of Leg " + legObj.symbol + ". Exiting thread Now. Thread name : " + threadName);
+            System.out.println(String.format("%1$tY%1$tm%1$td:%1$tH:%1$tM:%1$tS ", Calendar.getInstance(exchangeTimeZone)) + "Info : Stopped Monitoring of Leg id " + slotNumber + " " + legObj.symbol + "_" + legObj.contractType + ". Exiting thread Now. Thread name : " + threadName);
         }
     }
 
-    void updateLimitsStatusToFile(String fileNameIdentifier, String dataToWrite) {
+    void adjustTakeProfitLimit(double amount) {
 
-        if (!(fileNameIdentifier.isEmpty())) {
-            try {
-                FileWriter writer = new FileWriter(fileNameIdentifier, true);
-
-                writer.append(dataToWrite);
-                writer.append('\n');
-                writer.flush();
-                writer.close();
-            } catch (IOException ex) {
-                ex.printStackTrace();
-            }
-        }
+        if (legObj.contractType.equalsIgnoreCase("OPT")) {
+            if (legObj.rightType.equalsIgnoreCase("CALL") || legObj.rightType.equalsIgnoreCase("C")) {
+                // it is long position. Lower Breach is lower than current level while upper breach is higher than current level
+                rangeLimitObj.takeProfitLimit = rangeLimitObj.takeProfitLimit + amount;
+            } else if (legObj.rightType.equalsIgnoreCase("PUT") || legObj.rightType.equalsIgnoreCase("P")) {
+                // it is short position. Lower Breach is higher than current level while upper breach is lower than current level
+                rangeLimitObj.takeProfitLimit = rangeLimitObj.takeProfitLimit - amount;
+            }                    
+        } else {
+            if (legObj.qty > 0) {
+                // it is long position. Lower Breach is lower than current level while upper breach is higher than current level
+                rangeLimitObj.takeProfitLimit = rangeLimitObj.takeProfitLimit + amount;
+            } else if (legObj.qty < 0) {
+                // it is short. Lower Breach is higher than current level while upper breach is lower than current level
+                rangeLimitObj.takeProfitLimit = rangeLimitObj.takeProfitLimit - amount;
+            }                    
+        }    
     }
-
+    
+    void adjustStopLossLimit(double amount) {
+    
+        if (legObj.contractType.equalsIgnoreCase("OPT")) {
+            if (legObj.rightType.equalsIgnoreCase("CALL") || legObj.rightType.equalsIgnoreCase("C")) {
+                // it is long position. Lower Breach is lower than current level while upper breach is higher than current level
+                rangeLimitObj.stopLossLimit = rangeLimitObj.stopLossLimit + amount;
+            } else if (legObj.rightType.equalsIgnoreCase("PUT") || legObj.rightType.equalsIgnoreCase("P")) {
+                // it is short position. Lower Breach is higher than current level while upper breach is lower than current level
+                rangeLimitObj.stopLossLimit = rangeLimitObj.stopLossLimit - amount;
+            }                    
+        } else {
+            if (legObj.qty > 0) {
+                // it is long position. Lower Breach is lower than current level while upper breach is higher than current level
+                rangeLimitObj.stopLossLimit = rangeLimitObj.stopLossLimit + amount;
+            } else if (legObj.qty < 0) {
+                // it is short. Lower Breach is higher than current level while upper breach is lower than current level
+                rangeLimitObj.stopLossLimit = rangeLimitObj.stopLossLimit - amount;
+            }                    
+        }    
+    }
+    
     boolean checkForSquareOffAtEOD() {
 
         boolean returnValue = false;
@@ -558,13 +567,19 @@ public class SingleLegExit implements Runnable {
             if (legDef.qty > 0) {
                 if (legLastPrice <= rangeLimits.stopLossLimit) {
                     if (debugFlag) {
-                        System.out.println(String.format("%1$tY%1$tm%1$td:%1$tH:%1$tM:%1$tS ", Calendar.getInstance(exchangeTimeZone)) + legObj.symbol + " : " + "Breached Stop Loss Limit on positive Quantity. legLastPrice : " + legLastPrice + " stopLossBreachLimit :" + rangeLimits.stopLossLimit);
+                        System.out.println(String.format("%1$tY%1$tm%1$td:%1$tH:%1$tM:%1$tS ", Calendar.getInstance(exchangeTimeZone)) 
+                                + slotNumber + " " + legObj.symbol + "_" + legObj.contractType + " : " 
+                                + "Breached Stop Loss Limit on long position. Price : " + String.format("%.0f", legLastPrice) 
+                                + " stopLossLimit :" + String.format("%.0f", rangeLimits.stopLossLimit) );
                     }
                     rangeLimits.stopLossLimitBreached = true;
                     rangeLimits.deviation = - 99;
                 } else if (legLastPrice > rangeLimits.takeProfitLimit) {
                     if (debugFlag) {
-                        System.out.println(String.format("%1$tY%1$tm%1$td:%1$tH:%1$tM:%1$tS ", Calendar.getInstance(exchangeTimeZone)) + legObj.symbol + " : " + "Breached Take Profit Limit on positive Quantity. legLastPrice : " + legLastPrice + " takeProfitBreachLimit :" + rangeLimits.takeProfitLimit);
+                        System.out.println(String.format("%1$tY%1$tm%1$td:%1$tH:%1$tM:%1$tS ", Calendar.getInstance(exchangeTimeZone))
+                                +  slotNumber + " " + legObj.symbol + "_" + legObj.contractType + " : " 
+                                + "Breached Take Profit Limit on long position. Price : " + String.format("%.0f", legLastPrice) 
+                                + " takeProfitLimit :" + String.format("%.0f", rangeLimits.takeProfitLimit) );
                     }
                     rangeLimits.takeProfitLimitBreached = true;
                     rangeLimits.deviation = 199;
@@ -574,13 +589,19 @@ public class SingleLegExit implements Runnable {
             } else if (legDef.qty < 0) {
                 if (legLastPrice > rangeLimits.stopLossLimit) {
                     if (debugFlag) {
-                        System.out.println(String.format("%1$tY%1$tm%1$td:%1$tH:%1$tM:%1$tS ", Calendar.getInstance(exchangeTimeZone)) + legObj.symbol + " : " + "Breached Stop Loss Limit on negative Quantity. legLastPrice : " + legLastPrice + " stopLossBreachLimit :" + rangeLimits.stopLossLimit);
+                        System.out.println(String.format("%1$tY%1$tm%1$td:%1$tH:%1$tM:%1$tS ", Calendar.getInstance(exchangeTimeZone)) 
+                                + slotNumber + " " + legObj.symbol + "_" + legObj.contractType + " : " 
+                                + "Breached Stop Loss Limit on short position. Price : " + String.format("%.0f", legLastPrice) 
+                                + " stopLossLimit :" + String.format("%.0f", rangeLimits.stopLossLimit) );
                     }
                     rangeLimits.stopLossLimitBreached = true;
                     rangeLimits.deviation = - 99;
                 } else if (legLastPrice < rangeLimits.takeProfitLimit) {
                     if (debugFlag) {
-                        System.out.println(String.format("%1$tY%1$tm%1$td:%1$tH:%1$tM:%1$tS ", Calendar.getInstance(exchangeTimeZone)) + legObj.symbol + " : " + "Breached Take Profit Limit on positive Quantity. legLastPrice : " + legLastPrice + " stopLossBreachLimit :" + rangeLimits.takeProfitLimit);
+                        System.out.println(String.format("%1$tY%1$tm%1$td:%1$tH:%1$tM:%1$tS ", Calendar.getInstance(exchangeTimeZone)) 
+                                + slotNumber + " " + legObj.symbol + "_" + legObj.contractType + " : " 
+                                + "Breached Take Profit Limit on short position. Price : " + String.format("%.0f", legLastPrice) 
+                                + " takeProfitLimit :" + String.format("%.0f", rangeLimits.takeProfitLimit) );
                     }
                     rangeLimits.takeProfitLimitBreached = true;
                     rangeLimits.deviation = 199;
@@ -589,7 +610,7 @@ public class SingleLegExit implements Runnable {
                 }
             } else {
                 if (debugFlag) {
-                    System.out.println(String.format("%1$tY%1$tm%1$td:%1$tH:%1$tM:%1$tS ", Calendar.getInstance(exchangeTimeZone)) + legObj.symbol + " : " + "Zero Quantity. Inside Calculate Breach - Which is Error Condition");
+                    System.out.println(String.format("%1$tY%1$tm%1$td:%1$tH:%1$tM:%1$tS ", Calendar.getInstance(exchangeTimeZone)) + slotNumber + " " + legObj.symbol + " : " + "Zero Quantity. Inside Calculate Breach - Which is Error Condition");
                 }
             }
         }
@@ -634,7 +655,13 @@ public class SingleLegExit implements Runnable {
                     // Pair is Shorted. Lower Breach is higher than current level while upper breach is lower than current level
                     rangeLimit.stopLossLimit = tickObj.comboLastPrice + (takeProfitGapPercentOnTakeProfitBreach * initialStopLoss);
                     rangeLimit.takeProfitLimit = tickObj.comboLastPrice - (stopLossGapPercentOnTakeProfitBreach * initialStopLoss);
-                }                
+                }
+                if (debugFlag) {
+                    System.out.println(String.format("%1$tY%1$tm%1$td:%1$tH:%1$tM:%1$tS ", Calendar.getInstance(exchangeTimeZone)) 
+                            + slotNumber + " " + legObj.symbol + "_" + legObj.contractType + " : " 
+                            + "New Limits are set. stopLossLimit : " + String.format("%.0f", rangeLimit.stopLossLimit) 
+                            + " takeProfitLimit :" + String.format("%.0f", rangeLimit.takeProfitLimit) );
+                }
             }
         }
     } // End of takeActionIfLimitsBreached   
@@ -651,7 +678,7 @@ public class SingleLegExit implements Runnable {
                 orderFilledStatus = true;
             }
             if (debugFlag) {
-                System.out.println(String.format("%1$tY%1$tm%1$td:%1$tH:%1$tM:%1$tS ", Calendar.getInstance(exchangeTimeZone)) + "Waiting for Order to be filled for  Order id " + orderId + " for " + timeOut + " seconds");
+                System.out.println(String.format("%1$tY%1$tm%1$td:%1$tH:%1$tM:%1$tS ", Calendar.getInstance(exchangeTimeZone)) + "Waiting for Order to be filled for Order id " + orderId + " for " + timeOut + " seconds");
             }
             timeOut += 10;
             myUtils.waitForNSeconds(5);
@@ -831,7 +858,9 @@ public class SingleLegExit implements Runnable {
                         myUtils.waitForNSeconds(5);
                         timeOut = timeOut + 5;
                     }
-                    if (ibInteractionClient.myOrderStatusDetails.containsKey(legOrderId)) {
+                    if (ibInteractionClient.myOrderStatusDetails.containsKey(legOrderId) &&
+                            (ibInteractionClient.myOrderStatusDetails.get(legOrderId).getRemainingQuantity() == 0) &&
+                            (ibInteractionClient.myOrderStatusDetails.get(legOrderId).getFilledQuantity() > 0)) {
                         System.out.println(String.format("%1$tY%1$tm%1$td:%1$tH:%1$tM:%1$tS ", Calendar.getInstance(exchangeTimeZone)) + "Exit Order filled for Order id " + legOrderId + " at avg filled price " + ibInteractionClient.myOrderStatusDetails.get(legOrderId).getFilledPrice());
                         if (legDef.qty > 0) {
                             // Leg was bought at the the time of taking position. Leg would be sold for squaring off

@@ -53,7 +53,7 @@ public class MonitorEntrySignals extends Thread {
     private String entrySignalsQueueKeyName = "INRSTR01ENTRYSIGNALS";
     private String confOrderType = "MARKET";
     private String duplicateComboAllowed = "yes";
-    private String duplicateLegAllowed = "yes";
+    private int maxNumDuplicateLegsAllowed = 1;
     //private String signalSymbolType = "FUT"; // STK or FUT or OPT
 
     private int MAXLONGPOSITIONS = 2;
@@ -89,7 +89,7 @@ public class MonitorEntrySignals extends Thread {
         confOrderType = myUtils.getHashMapValueFromRedis(jedisPool, redisConfigurationKey, "ENTRYORDERTYPE", false);
 
         duplicateComboAllowed = myUtils.getHashMapValueFromRedis(jedisPool, redisConfigurationKey, "ALLOWDUPLICATECOMBOPOSITIONS", false);
-        duplicateLegAllowed = myUtils.getHashMapValueFromRedis(jedisPool, redisConfigurationKey, "ALLOWDUPLICATELEGPOSITIONS", false);
+        maxNumDuplicateLegsAllowed = Integer.parseInt(myUtils.getHashMapValueFromRedis(jedisPool, redisConfigurationKey, "MAXNUMDUPLICATELEGPOSITIONS", false));
 
         minimumMoratoriumForPosition = Integer.parseInt(myUtils.getHashMapValueFromRedis(jedisPool, redisConfigurationKey, "MINIMUMMORATORIUMFORPOSITION", false));
 
@@ -269,6 +269,7 @@ public class MonitorEntrySignals extends Thread {
         Jedis jedis;
         int numOpenLongPositions = 0;
         int numOpenShortPositions = 0;
+        int numOpenCurrentLegPositions = 0;
 
         TradingObject tradingSignal = new TradingObject(signalReceived);
                 
@@ -292,19 +293,22 @@ public class MonitorEntrySignals extends Thread {
                     if (myTradeObject.getContractType().equalsIgnoreCase("STK")) {
                         if (myTradeObject.getContractUnderlyingName().equalsIgnoreCase(tradingSignal.getContractUnderlyingName())) {
                             // new position already exists
-                            alreadyExisting = true;                            
+                            alreadyExisting = true;
+                            numOpenCurrentLegPositions++;
                         }                        
                     } else if (myTradeObject.getContractType().equalsIgnoreCase("FUT")) {
                         if (myTradeObject.getContractUnderlyingName().equalsIgnoreCase(tradingSignal.getContractUnderlyingName())) {
                             // new position already exists
-                            alreadyExisting = true;                            
+                            alreadyExisting = true;
+                            numOpenCurrentLegPositions++;                            
                         }                        
                     } else if (myTradeObject.getContractType().equalsIgnoreCase("OPT")) {
                         if ((myTradeObject.getContractUnderlyingName().equalsIgnoreCase(tradingSignal.getContractUnderlyingName() )) &&
                              (myTradeObject.getContractOptionRightType().equalsIgnoreCase(tradingSignal.getContractOptionRightType())) &&
                              (myTradeObject.getContractOptionStrike() == tradingSignal.getContractOptionStrike()) ) {
                             // new position already exists
-                            alreadyExisting = true;                        
+                            alreadyExisting = true;
+                            numOpenCurrentLegPositions++;                            
                         }
                     }
                 }
@@ -324,7 +328,8 @@ public class MonitorEntrySignals extends Thread {
 
         if ((alreadyExisting) ||
                 ((tradingSignal.getSideAndSize() > 0) && (numOpenLongPositions >= MAXLONGPOSITIONS)) || 
-                ((tradingSignal.getSideAndSize() < 0) && (numOpenShortPositions >= MAXSHORTPOSITIONS))                
+                ((tradingSignal.getSideAndSize() < 0) && (numOpenShortPositions >= MAXSHORTPOSITIONS)) ||
+                ((tradingSignal.getSideAndSize() < 0) && (numOpenCurrentLegPositions >= maxNumDuplicateLegsAllowed))               
             ) {
             returnValue = false;
         }
@@ -333,6 +338,7 @@ public class MonitorEntrySignals extends Thread {
         System.out.println(String.format("%1$tY%1$tm%1$td:%1$tH:%1$tM:%1$tS ", Calendar.getInstance(myExchangeObj.getExchangeTimeZone())) + "numOpenLongPositions : " + numOpenLongPositions + " against Allowed LONG positions : " + MAXLONGPOSITIONS);
         System.out.println(String.format("%1$tY%1$tm%1$td:%1$tH:%1$tM:%1$tS ", Calendar.getInstance(myExchangeObj.getExchangeTimeZone())) + "numOpenShortPositions : " + numOpenShortPositions + " against Allowed SHORT positions : " + MAXSHORTPOSITIONS);
         System.out.println(String.format("%1$tY%1$tm%1$td:%1$tH:%1$tM:%1$tS ", Calendar.getInstance(myExchangeObj.getExchangeTimeZone())) + "Already Existing Status : " + alreadyExisting);
+        System.out.println(String.format("%1$tY%1$tm%1$td:%1$tH:%1$tM:%1$tS ", Calendar.getInstance(myExchangeObj.getExchangeTimeZone())) + "numOpenCurrentLegPositions : " + numOpenCurrentLegPositions + " against Allowed simulneously same contract Open positions : " + maxNumDuplicateLegsAllowed);        
         System.out.println(String.format("%1$tY%1$tm%1$td:%1$tH:%1$tM:%1$tS ", Calendar.getInstance(myExchangeObj.getExchangeTimeZone())) + "Finally returning (true is allow taking positions. false is do not allow) : " + returnValue + " for " + tradingSignal.getContractStructure() + " for Long/Short " + tradingSignal.getSideAndSize());
 
         return (returnValue);
@@ -419,7 +425,9 @@ public class MonitorEntrySignals extends Thread {
                 }
             }
         }
-
+        // Debug Message
+        System.out.println(String.format("%1$tY%1$tm%1$td:%1$tH:%1$tM:%1$tS ", Calendar.getInstance(myExchangeObj.getExchangeTimeZone())) + "Info : blacklisted notfound status : " + notFound);
+ 
         return (notFound);
     }
 
@@ -436,9 +444,62 @@ public class MonitorEntrySignals extends Thread {
                 returnValue = false;
             }
         }
+
+        // Debug Message
+        System.out.println(String.format("%1$tY%1$tm%1$td:%1$tH:%1$tM:%1$tS ", Calendar.getInstance(myExchangeObj.getExchangeTimeZone())) + "Info : longShortAllowed returning : " + returnValue);
+             
         return (returnValue);
     }
 
+    
+    boolean checkIfInDirectionOfMarketPrediction(String side, String contractStructure) {
+        boolean returnValue = false;
+        // Check for last two NIFTY50 Signal. 
+        // In case RL signal is 1 then aloow long positions
+        // In case RL signal is -1 then allow short positions
+        // In case signal is zero then do not allow anything
+        Jedis jedis = jedisPool.getResource();
+        int lastTwoNIFTY50Signals = 0;
+        int lastNIFTY50Signal = 0;        
+        if (Integer.parseInt(jedis.lindex("NIFTY50SIGNALSARCHIVE", 0).split(",")[3]) < 9) {
+            lastTwoNIFTY50Signals = lastTwoNIFTY50Signals + 
+                    Integer.parseInt(jedis.lindex("NIFTY50SIGNALSARCHIVE", 0).split(",")[3]);
+            lastNIFTY50Signal = Integer.parseInt(jedis.lindex("NIFTY50SIGNALSARCHIVE", 0).split(",")[3]);                   
+        }
+        if (Integer.parseInt(jedis.lindex("NIFTY50SIGNALSARCHIVE", 1).split(",")[3]) < 9) {
+            lastTwoNIFTY50Signals = lastTwoNIFTY50Signals + 
+                    Integer.parseInt(jedis.lindex("NIFTY50SIGNALSARCHIVE", 1).split(",")[3]);            
+        }
+        jedisPool.returnResource(jedis);
+
+        if (contractStructure.contains("_OPT_")) {
+            if ( contractStructure.contains("_CALL_") ) {
+                if ( (lastTwoNIFTY50Signals >= 0) && (lastNIFTY50Signal != -1) ) {
+                    returnValue = true;                
+                }
+            } else if ( contractStructure.contains("_PUT_") ) {
+                if ( (lastTwoNIFTY50Signals <= 0) && (lastNIFTY50Signal != 1) ) {
+                    returnValue = true;                
+                }
+            }            
+        } else {
+            if (Integer.parseInt(side) > 0) {
+                if ( (lastTwoNIFTY50Signals >= 0) && (lastNIFTY50Signal != -1) ) {
+                    returnValue = true;                
+                }
+            } else if (Integer.parseInt(side) < 0) {
+                if ( (lastTwoNIFTY50Signals <= 0) && (lastNIFTY50Signal != 1) ) {
+                    returnValue = true;                
+                }
+            }
+        }
+
+        // Debug Message
+        System.out.println(String.format("%1$tY%1$tm%1$td:%1$tH:%1$tM:%1$tS ", Calendar.getInstance(myExchangeObj.getExchangeTimeZone())) + "Info : lastNiftySignal :" + lastNIFTY50Signal + " sumOfPrevTwoNiftySignals : " + lastTwoNIFTY50Signals + " returning : " + returnValue);
+        
+        return (returnValue);
+    }        
+        
     @Override
     public void run() {
 
@@ -479,6 +540,9 @@ public class MonitorEntrySignals extends Thread {
                 String allowShortIndicator = myUtils.getHashMapValueFromRedis(jedisPool, redisConfigurationKey, "ALLOWSHORTENTRY", false);
                 int legSizeMultiple = Integer.parseInt(myUtils.getHashMapValueFromRedis(jedisPool, redisConfigurationKey, "LEGSIZEMULTIPLE", false));
 
+                duplicateComboAllowed = myUtils.getHashMapValueFromRedis(jedisPool, redisConfigurationKey, "ALLOWDUPLICATECOMBOPOSITIONS", false);
+                maxNumDuplicateLegsAllowed = Integer.parseInt(myUtils.getHashMapValueFromRedis(jedisPool, redisConfigurationKey, "MAXNUMDUPLICATELEGPOSITIONS", false));
+                
                 String[] entrySignal = entrySignalReceived.split(",");
                 // check if current time is within stipulated entry order time range and not stale by more than 5 minutes.
                 // check if spread is not more than stipulated spread (say 200000 INR for NSE
@@ -489,6 +553,7 @@ public class MonitorEntrySignals extends Thread {
                         && checkExistingOpenPositions(openPositionsQueueKeyName, entrySignalReceived)
                         && checkLastTradeTimeStamp(closedPositionsQueueKeyName, entrySignal[TradingObject.ENTRY_TIMESTAMP_INDEX], entrySignal[TradingObject.NAME_INDEX])
                         && notBlackListed(blackListedSymbols, entrySignal[TradingObject.NAME_INDEX])
+                        && checkIfInDirectionOfMarketPrediction(entrySignal[TradingObject.SIDE_SIZE_INDEX],entrySignal[TradingObject.STRUCTURE_INDEX])                        
                         && checkIfLongOrShortEntryAllowed(allowLongIndicator, allowShortIndicator, entrySignal[TradingObject.SIDE_SIZE_INDEX])
                         && withinStipulatedCurrentPnLForToday(MAXNUMENTRIESINADAY, openPositionsQueueKeyName, closedPositionsQueueKeyName, NOFURTHERPOSITIONTAKEPROFITLIMIT, NOFURTHERPOSITIONSTOPLOSSLIMIT)) {
                     // Block position slot - doing it here outside entry thread to avoid race condition which is seen happeneing if done inside thread

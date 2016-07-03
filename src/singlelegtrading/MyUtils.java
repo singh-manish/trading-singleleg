@@ -440,6 +440,7 @@ class MyOrderStatusObjClass {
     private long updateTime;
     private String uniqueExecutionId, orderReference;
     private Contract contractDet = new Contract();
+    private String ibOrderStatus;
     
     public MyOrderStatusObjClass(int orderId) {
         this.orderId = orderId;
@@ -451,6 +452,7 @@ class MyOrderStatusObjClass {
         this.updateTime = -1;
         this.uniqueExecutionId = "";
         this.orderReference = "";
+        this.ibOrderStatus = "";
     }
 
     public int getOrderId() {
@@ -492,7 +494,11 @@ class MyOrderStatusObjClass {
     public long getUpdateTime() {
         return this.updateTime;
     }
-
+    
+    public String getIBOrderStatus() {
+        return this.ibOrderStatus;
+    } 
+    
     public void setOrderId(int orderId) {
         this.orderId = orderId;
     }
@@ -533,13 +539,16 @@ class MyOrderStatusObjClass {
         this.contractDet = contractDetails;
     }
     
+    public void setIBOrderStatus(String orderStatus) {
+        this.ibOrderStatus = orderStatus;
+    }    
 }
 
 // Define class to store Manual Intervention Signals
 class MyManualInterventionClass {
 
     private int slotNumber, actionIndicator;
-    private String targetValue;
+    private String targetValue, actionReason;
     public static final int DEFAULT = 0;    
     public static final int SQUAREOFF = 1;
     public static final int UPDATETAKEPROFIT = 2;
@@ -556,6 +565,10 @@ class MyManualInterventionClass {
         return this.slotNumber;
     }
 
+    public String getActionReason() {
+        return this.actionReason;
+    }
+        
     public String getTargetValue() {
         return this.targetValue;
     }
@@ -568,6 +581,10 @@ class MyManualInterventionClass {
         this.slotNumber = slotNumber;
     }
 
+    public void setActionReason(String actionReason) {
+        this.actionReason = actionReason;
+    }
+    
     public void setTargetValue(String targetValue) {
         this.targetValue = targetValue;
     }
@@ -1226,9 +1243,12 @@ public class MyUtils {
 
         Jedis jedis = jedisPool.getResource();
         try {
-            // retrieve map from redis  
-            Map<String, String> orderId2UniqueExecutionMapping = jedis.hgetAll("ORDERID2UNIQUEEXECUTIONIDMAPPING");
-            Map<String, String> orderExecutionRecords = jedis.hgetAll("IBORDEREXECUTIONRECORDS"); 
+            
+            String strategyName = getHashMapValueFromRedis(jedisPool, redisConfigurationKey, "STRATEGYNAME", false);
+            // retrieve map from redis
+            jedis.select(1); // move to database 1
+            Map<String, String> orderId2UniqueExecutionMapping = jedis.hgetAll(strategyName + "ORDERID2UNIQUEEXECUTIONIDMAPPING");
+            Map<String, String> orderExecutionRecords = jedis.hgetAll(strategyName + "IBORDEREXECUTIONRECORDS"); 
 
             for (int orderId : ibInteractionClient.myOrderStatusDetails.keySet()) {            
                 orderId2UniqueExecutionMapping.put(Integer.toString(orderId), ibInteractionClient.myOrderStatusDetails.get(orderId).getUniqueExecutionId());
@@ -1256,8 +1276,8 @@ public class MyUtils {
                         ibInteractionClient.myOrderStatusDetails.get(orderId).getContractDet().m_localSymbol;                        
                 orderExecutionRecords.put(ibInteractionClient.myOrderStatusDetails.get(orderId).getUniqueExecutionId(), orderExecutionDetails);
             }
-            jedis.hmset("ORDERID2UNIQUEEXECUTIONIDMAPPING", orderId2UniqueExecutionMapping);
-            jedis.hmset("IBORDEREXECUTIONRECORDS", orderExecutionRecords);
+            jedis.hmset(strategyName + "ORDERID2UNIQUEEXECUTIONIDMAPPING", orderId2UniqueExecutionMapping);
+            jedis.hmset(strategyName + "IBORDEREXECUTIONRECORDS", orderExecutionRecords);
         } catch (JedisException e) {
             //if something wrong happen, return it back to the pool
             if (null != jedis) {

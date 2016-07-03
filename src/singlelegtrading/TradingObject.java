@@ -293,6 +293,10 @@ public class TradingObject {
         }
         return (lotSize);
     }
+
+    public String getTradingContractType() {
+        return (this.getContractType());
+    } 
     
     public String getContractType() {
         
@@ -304,6 +308,10 @@ public class TradingObject {
         return (contractType);
     }     
 
+    public String getTradingContractOptionRightType() {
+        return(this.getContractOptionRightType());
+    }   
+    
     public String getContractOptionRightType() {
         
         String optionRightType = "CALL"; // Default value

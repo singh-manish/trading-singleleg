@@ -38,11 +38,12 @@ public class ManualInterventionSignalObject {
     public static final int MI_SLOTNUMBER_INDEX = 2;
     // Action to take. 101 to 199 for Strategy level Actions. 1 to 99 for trade level actions
     public static final int MI_ACTION_INDEX = 3;
+    public static final int MI_ACTIONREASON_INDEX = 4;    
     // New Value of given parameter - whether for strategy level OR for Trade Level. Assign to zero if parameter reassignment not reqd.
-    public static final int MI_NEWVALUE_INDEX = 4;
+    public static final int MI_NEWVALUE_INDEX = 5;
 
     // Number of elements in signal
-    public static final int MI_MAX_ELEMENTS = 5;
+    public static final int MI_MAX_ELEMENTS = 6;
 
     private String[] miObjectStructure;
     /*
@@ -67,11 +68,13 @@ public class ManualInterventionSignalObject {
 
      1 to 99 - Action code pertains to at trade level
      1  - Square Off the trade / position at given slot number 
-     2  - Update trade level stop loss to given value 
-     3  - Update trade level take profit to given value
+     2  - Adjust trade level stop loss by given value 
+     3  - Adjust trade level take profit by given value
      4  - Stop Monitoring (useful for graceful exit)
+
+     4  :  reason for action        
     
-     4  :  Target Value of parameter to be updated. 0 if not applicable (e.g. for square off action)        
+     5  :  Target Value of parameter to be updated. 0 if not applicable (e.g. for square off action)        
     
      */
 
@@ -114,6 +117,10 @@ public class ManualInterventionSignalObject {
         miObjectStructure[MI_ACTION_INDEX] = newAction;
     }
 
+    public void setActionReason(String newReasonForAction) {
+        miObjectStructure[MI_ACTIONREASON_INDEX] = newReasonForAction;
+    }
+    
     public void setTargetValue(String newValueForAction) {
         miObjectStructure[MI_NEWVALUE_INDEX] = newValueForAction;
     }
@@ -161,6 +168,10 @@ public class ManualInterventionSignalObject {
         return (returnVal);
     }
 
+    public String getActionReason() {
+        return(miObjectStructure[MI_ACTIONREASON_INDEX]);
+    }
+    
     public String getTargetValue() {
         return (miObjectStructure[MI_NEWVALUE_INDEX]);
     }

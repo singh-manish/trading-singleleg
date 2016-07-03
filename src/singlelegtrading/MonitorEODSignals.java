@@ -317,7 +317,6 @@ public class MonitorEODSignals extends Thread {
                 jedisPool.returnResource(jedis);
             }
         }        
-        
     }
 
     void sendEntrySignal(String entrySignalsQueue, MyEntrySignalParameters signalParam) {
